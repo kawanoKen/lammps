@@ -265,6 +265,11 @@ LAMMPSのbinary restartは物理状態を保存するが、不均等なMPI領域
 | 7 | factor 0.75 | 6.7554 | 0.0889 | 1.32% | 4.55% |
 | 8 | factor 0.75 | 6.5513 | 0.0614 | 0.94% | 2.70% |
 
+![Phaseごとのaction別500-step実行時間](phase_action_runtimes.png)
+
+図は各actionの5反復平均をbar、標準偏差をerror barで示す。全Phaseで同じ縦軸を使用し、
+黒枠は各Phaseで平均実行時間が最小だったactionを表す。
+
 Phase 2は、action間の差が測定変動より小さく、優劣を判定できない。Phase 1、3、
 4、7、8では、より明確なaction reversal候補が得られた。
 
