@@ -15,6 +15,7 @@ checkpoint-fork comparisons and held-out live evaluations take precedence.
 | Shock full-action online FQI | discrete skin × factor | idle and CPU jitter | idle-trained policy won both tested regimes | Beats tested fixed settings, but progress-like features confound interpretation | [protocol](experiments/shock_full_action/PROTOCOL.md), [results](experiments/shock_full_action/RESULTS.md) |
 | Shock continuous skin only | continuous skin; factor fixed | idle and CPU jitter | fixed skin 0.50 | Learned control did not improve runtime | [implementation/training](experiments/shock_skin_only/IMPLEMENTATION_AND_TRAINING.md), [results](experiments/shock_skin_only/RESULTS.md) |
 | Shock hybrid balance | skip or continuous neighbor-weight factor; skin fixed | idle and CPU jitter | idle: idle-trained; jitter: jitter-trained in mean | Both beat tested fixed/threshold baselines. Idle-side difference is resolved; jitter-side policy reversal remains inconclusive | [protocol](experiments/shock_balance_hybrid/PROTOCOL.md), [implementation](experiments/shock_balance_hybrid/IMPLEMENTATION.md), [results](experiments/shock_balance_hybrid/RESULTS.md) |
+| Shock representative-state forks | skip or neighbor-weight factor; skin fixed | eight states from one fixed-initial-state idle trajectory | best action changes from skip to factors 0.75--1.50 | 240 safe forks show a descriptive fixed/oracle gap of 3.45%; independent persistence validation is pending | [results](experiments/shock_balance_hybrid/REPRESENTATIVE_STATE_ACTION_RESULTS.md), [portable reproduction](experiments/shock_balance_hybrid/PORTABLE_REPRODUCTION.md) |
 
 ## Current interpretation
 
@@ -27,8 +28,9 @@ checkpoint-fork comparisons and held-out live evaluations take precedence.
   that result is separate from the CPU shock action space.
 - No current result proves that RL is superior to the best possible fixed
   factor, a strong supervised contextual optimizer, or a better phase rule.
-- The highest-priority confirmation is a larger paired CPU-jitter comparison
-  of the two frozen hybrid-balance policies, with denser fixed-factor controls.
+- The highest-priority confirmation is independent reproduction of the strong
+  representative-state action reversals and measurement of whether their
+  partition effects persist beyond the first 500-step interval.
 
 ## Non-experiment references
 

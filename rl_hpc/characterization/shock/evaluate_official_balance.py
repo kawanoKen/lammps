@@ -241,7 +241,8 @@ def main() -> None:
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, lambda _s,_f: (_ for _ in ()).throw(
         KeyboardInterrupt('evaluation interrupted')))
-    models, provenance = load_models()
+    needs_models = any(policy in TRAINING for policy in args.policies)
+    models, provenance = load_models() if needs_models else ({}, {})
     specs = json.loads(args.restart_list.read_text())
     train_seeds = {seed for item in provenance.values()
                    for seed in item['training_physical_seeds']}
