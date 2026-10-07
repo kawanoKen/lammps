@@ -34,6 +34,172 @@ workloadは、LAMMPS同梱の
 - neighbor設定：`every 1 delay 0 check yes`
 - 1 decision interval：500 MD steps
 
+## 本実験における状態・行動・報酬の定義
+
+### 状態
+
+本実験では、状態を次の3層に分けて扱った。
+
+#### 1. 物理状態
+
+- temperature
+- pressure
+- density
+- total energy per atom
+- shock位置（解析・安全確認用）
+
+#### 2. Software・MPI分割状態
+
+- atom不均衡：`Nlocal_max / Nlocal_mean`
+- rankごとの`Nlocal`の平均・最大・最小
+- rankごとの`Nghost`の平均・最大・最小
+- rankごとのneighbor数の平均・最大・最小
+- neighbor不均衡：`Neighs_max / Neighs_mean`
+- neighbor list build回数
+- dangerous neighbor build回数
+- 現在のneighbor skin
+- 現在または直前に適用されたneighbor-weight factor
+
+#### 3. 直前区間の性能状態
+
+- Pair時間/step
+- Neigh時間/step
+- Comm時間/step
+- Modify時間/step
+- Other時間/step
+- 500-step wall time
+
+代表状態の選択には、temperature、pressure、atom不均衡、`Nlocal`・neighbor・ghost
+の偏り、Pair・Neigh・Comm・Modify時間、neighbor build率を用いた。step、decision番号、
+shock位置は代表状態の選択距離へ入れていない。
+
+各checkpointからactionを分岐するときは、物理checkpointを固定し、factor 1.0で
+pre-action MPI partitionを共通に再構成した。したがって、各phase内ではすべての
+actionが同じ物理状態と同じ初期partitionから開始する。
+
+### 行動
+
+neighbor skinは0.5に固定した。行動は次の6種類である。
+
+| Action | 実行内容 |
+|:---|:---|
+| skip | balanceを実行しない |
+| factor 0.50 | `balance 1.0 shift x 10 1.0 weight neigh 0.50` |
+| factor 0.75 | `balance 1.0 shift x 10 1.0 weight neigh 0.75` |
+| factor 1.00 | `balance 1.0 shift x 10 1.0 weight neigh 1.00` |
+| factor 1.25 | `balance 1.0 shift x 10 1.0 weight neigh 1.25` |
+| factor 1.50 | `balance 1.0 shift x 10 1.0 weight neigh 1.50` |
+
+`factor`は、各原子へ与えるneighbor-count由来の計算重みの強さを表す。大きなfactor
+ほどneighbor数の多い原子を重く評価して領域分割する。これは物理モデルの係数では
+なく、MPI load balancingのための実行パラメータである。
+
+### 状態遷移
+
+action適用後に500 MD steps進め、その区間終了時の物理状態、MPI分割統計、neighbor
+統計、LAMMPS timingを`次状態 s_{t+1}`として記録した。
+
+```text
+s_t
+  -> skip または balance(factor)
+  -> 500 MD steps
+  -> s_{t+1}
+```
+
+### 報酬
+
+報酬は、action適用とその後の500 MD stepsに要したwall timeの負値である。
+
+```text
+r_t = -(action適用時間 + 500-step実行時間)
+```
+
+pre-action partitionを共通化するための再構成時間は、すべてのactionに共通する実験
+準備処理なので報酬へ含めていない。
+
+## 学習済みRLとの状態・行動の対応
+
+完全に同一ではない。対応関係は次のとおりである。
+
+### RLが使用した状態入力
+
+hybrid-balance RLの状態ベクトルは、定数項を除いて次の19要素である。
+
+1. temperature
+2. pressure
+3. atom imbalance
+4. 現在のneighbor-weight factor
+5. 前回balanceからの経過decision数
+6. 前decisionでbalanceを実行したか
+7. 前decisionのbalance実行時間
+8. 前action適用前のatom imbalance
+9. 前action適用後のatom imbalance
+10. 前区間のPair時間/step
+11. 前区間のNeigh時間/step
+12. 前区間のComm時間/step
+13. 前区間のModify時間/step
+14. neighbor build率
+15. `Nlocal`の相対不均衡
+16. neighbor数の相対不均衡
+17. x方向subdomain幅の最小値
+18. x方向subdomain幅の最大値
+19. x方向subdomain幅の標準偏差
+
+RL入力からは、MD step、decision番号、shock位置、CPU contentionの真値、host loadを
+除外した。CPU使用率はログには保存したが、方策入力には使用していない。
+
+### RLが使用した行動
+
+RLの行動は次のhybrid actionである。
+
+```text
+skip balance
+または
+balance 1.0 shift x 10 1.0 weight neigh factor
+factor in [0.5, 1.5]
+```
+
+したがって、行動の意味と安全範囲は本実験と同じである。ただし、本実験はfactorを
+`{0.50, 0.75, 1.00, 1.25, 1.50}`の5点に離散化したのに対し、RL方策は0.5～1.5の
+連続値を選択できる。
+
+### 一致点と相違点
+
+| 項目 | 本実験 | 学習済みRL | 対応 |
+|:---|:---|:---|:---|
+| workload | Shock/NEMD、491,520 atoms | 同じ | 一致 |
+| MPI/OMP | MPI 32、OMP 1 | 同じ | 一致 |
+| decision interval | 500 MD steps | 500 MD steps | 一致 |
+| skin | 0.5固定 | 0.5固定 | 一致 |
+| action | skip + factor 5点 | skip + factor連続値 | 本実験はRL actionの部分集合 |
+| reward | action + 500-step時間の負値 | 同じ | 一致 |
+| 主要状態 | imbalance、Pair/Neigh/Comm等 | 同じ信号を含む19要素 | 部分的に一致 |
+| ghost統計・density | 記録・PCAで一部使用 | 方策入力には不使用 | 相違 |
+| balance履歴・subdomain幅 | 分岐実験のPCAには不使用 | 方策入力に使用 | 相違 |
+| process | checkpointごとに独立fork | 1 episode中はpersistent process | 相違 |
+| pre-action partition | 毎forkでfactor 1.0へ共通化 | 前actionのpartitionを継承 | 相違 |
+
+したがって、今回の結果は「RLが扱うactionが次のRL関連状態と将来報酬を変える」こと
+を裏付ける。一方、この反実仮想実験をそのまま学習済みRLの方策評価とみなすことは
+できない。特にRL episodeではpartitionがdecision間で継承されるため、今回の
+2,500-step持続効果実験のほうが通常の1-step forkよりRL環境に近い。
+
+### PCA図で使用した状態はRL状態全体ではない
+
+PCAでは可視性を優先し、次の6変数だけを用いた。
+
+- atom不均衡
+- neighbor不均衡
+- ghost不均衡
+- Pair時間/step
+- Neigh時間/step
+- Comm時間/step
+
+このうちghost不均衡はRL方策入力に含まれず、反対にRLが使うbalance履歴、現在factor、
+Modify時間、neighbor build率、subdomain幅はPCAへ含めていない。よってPCAは
+RLの19次元状態そのものの可視化ではなく、action依存のpartition・性能遷移を説明する
+ための6次元部分空間の可視化である。
+
 ## 頻出状態の採取
 
 次のLAMMPS公式heuristicを使用した。
