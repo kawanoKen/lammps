@@ -65,3 +65,29 @@ runner-up actions at the strongest reversal phases, followed by a common-action
 continuation for 2,000--5,000 steps.  That will test ranking reproducibility and
 whether the altered partition has sequential value rather than only an
 immediate contextual effect.
+
+## Independent 2,500-step persistence validation
+
+The strongest candidate reversals at phases 1, 3, 4, 7, and 8 were rerun in
+seven randomized independent process pairs.  Each branch applied its tested
+action for the first 500-step interval and then used the same no-balance action
+for four further 500-step intervals.  All 70 trials were safe.  Differences
+below are first-listed action minus second-listed action; negative is faster.
+
+| Phase | Comparison | Immediate difference, s (95% paired CI) | 2,500-step difference, s (95% paired CI) | Conclusion |
+|---:|:---|---:|---:|:---|
+| 1 | skip - factor 1.0 | -0.0940 [-0.1121, -0.0758] | -0.4968 [-0.7739, -0.2196] | skip advantage persists |
+| 3 | factor 1.5 - skip | -0.3595 [-0.3893, -0.3297] | -6.4568 [-6.6274, -6.2862] | factor 1.5 advantage grows strongly |
+| 4 | factor 1.25 - factor 1.0 | -0.2274 [-0.3366, -0.1183] | +1.5315 [+1.3859, +1.6771] | immediate winner reverses over the horizon |
+| 7 | factor 0.75 - factor 0.5 | -0.2585 [-0.3483, -0.1687] | -1.3467 [-1.6651, -1.0283] | factor 0.75 advantage persists |
+| 8 | factor 0.75 - factor 0.5 | -0.2565 [-0.3572, -0.1557] | -0.1743 [-0.6565, +0.3080] | cumulative ordering is inconclusive |
+
+Phase 4 establishes a measured distinction between the immediate and
+finite-horizon objectives: factor 1.25 wins the action interval, but factor 1.0
+wins the common-continuation total.  Phase 3 shows an even stronger transition
+effect: its per-segment advantage grows from 0.36 s in the action interval to
+2.27 s in the fifth interval.  These results demonstrate that the selected
+balance action can alter the processor partition sufficiently to affect several
+future rewards.  They support a sequential control formulation, but do not by
+themselves establish that RL is better than a model-predictive or phase-aware
+controller.
