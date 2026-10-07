@@ -308,160 +308,312 @@ subdomainを狭くするための機構である。
 - software状態：その物理系をどの分割・設定で計算しているか
 - 性能状態：Pair、Neigh、Commなど、どこへ実時間を使っているか
 
-## 9. 制御action
+## 9. 制御パラメータの定義
 
-今回検討している主要actionは、neighbor skin、`neigh_modify every`、およびbalance
-系設定である。いずれも物理ポテンシャルを変更するパラメータではないが、不適切な
-neighbor設定は必要なpairを欠落させ得るため、安全性確認が必要である。
+ここでは更新方策や良否ではなく、LAMMPSへ与える制御パラメータと、実装内での定義を
+整理する。主要な制御変数は概念的に次のように書ける。
 
-### 9.1 Neighbor skin
+\[
+a_t = (s_t^{\mathrm{skin}}, M_t, b_t, f_t,
+       \theta_t, K_t, \eta_t, d_t),
+\]
+
+ここで、skinを \(s^{\mathrm{skin}}\)、`every`を \(M\)、balanceの実行有無を
+\(b\)、neighbor weight factorを \(f\)、balance開始thresholdを \(\theta\)、最大反復
+回数を \(K\)、停止thresholdを \(\eta\)、balance対象方向を \(d\) と表す。
+
+### 9.1 Neighbor skin：\(s^{\mathrm{skin}}\)
 
 ```text
 neighbor SKIN bin
 ```
 
-skinは、力のcutoff外側へ追加するneighbor listの余裕幅である。listには概ね
+型は正の実数である。原子type \(i,j\) 間の力のcutoffを \(r^{\mathrm{cut}}_{ij}\) と
+すると、neighbor listへ登録する距離cutoffは
 
 \[
-r_{\mathrm{cut}} + r_{\mathrm{skin}}
+r^{\mathrm{neigh}}_{ij}
+= r^{\mathrm{cut}}_{ij} + s^{\mathrm{skin}}
 \]
 
-以内のpair候補が登録される。
+である。粒子間距離を \(r_{pq}\) とすると、通常のlist登録条件は
 
-skinを小さくした場合は、`Neighs`と`Nghost`が減り、毎stepのPair・Commコストを
-抑えやすい。一方、粒子がskinの半分程度移動するまでの時間が短くなり、neighbor
-listを頻繁に再構築する。
+\[
+r_{pq}^2 \leq
+\left(r^{\mathrm{cut}}_{ij}+s^{\mathrm{skin}}\right)^2
+\]
 
-skinを大きくした場合は、listを長く使えるため再構築頻度を下げやすい。一方、余分な
-pair候補とghost atomが増え、Pair・Comm・メモリコストが増える。
+となる。skinは力を実際に計算する物理cutoffではなく、次回のlist再構築までに粒子が
+移動できる余裕幅である。
 
-したがってskinは、次のトレードオフを制御する連続値actionである。
+今回のbalance RLでは
 
-```text
-小さいskin：短いlist、再構築が多い
-大きいskin：長いlist、再構築が少ない
-```
+\[
+s^{\mathrm{skin}}=0.5
+\]
 
-skin変更後はneighbor listの再構築が必要になる。物理的なcutoffは変えないため、
-安全に再構築されて必要pairが保持される限り、意図する物理モデルは変わらない。
-ただし演算順序が変わるため、浮動小数点レベルで軌跡は分岐し得る。
+へ固定しており、actionには含めていない。
 
-### 9.2 `neigh_modify every`
+### 9.2 `every`：\(M\)
 
 ```text
 neigh_modify every M delay D check yes
 ```
 
-`every M`は「M stepごとに必ず再構築する」という意味ではない。`delay`条件を満たした
-後、M step間隔で再構築の可否を判定する。
-
-`check yes`の場合、その判定stepで少なくとも1粒子が前回構築時からskinの半分より
-大きく移動していれば、実際に再構築する。
-
-今回の設定は次のとおりである。
-
-```text
-neigh_modify every 1 delay 0 check yes
-```
-
-これは毎step判定を許可し、必要になった最初のstepで再構築できる保守的な設定である。
-
-- 小さい`every`：判定コストは増えるが、必要な再構築を早く実行できる。
-- 大きい`every`：判定回数と再構築候補stepを減らせるが、その間の粒子移動が大きいと
-  pair欠落やdangerous buildの危険が増える。
-
-`every`は整数actionである。性能だけでなく正しさへ影響し得るため、temperature、
-timestep、skin、最大粒子速度に応じた安全範囲が必要である。現在のShock/balance
-実験では`every=1`へ固定し、RL actionには含めていない。
-
-### 9.3 One-shot `balance`
-
-```text
-balance THRESH shift x NITER STOPTHRESH [weight ...]
-```
-
-`balance`は、その時点で一度だけMPI subdomain境界を再計算するactionである。変更後の
-領域分割は、その後のrunへ持続する。
-
-今回の代表的なactionは次である。
-
-```text
-balance 1.0 shift x 10 1.0 weight neigh FACTOR
-```
-
-各引数の意味は次のとおりである。
-
-| 引数 | 意味 |
-|:---|:---|
-| 最初の`1.0` | balanceを実行するimbalance threshold |
-| `shift x` | x方向のMPI切断面だけを移動する |
-| `10` | x方向の切断面探索の最大反復数 |
-| 次の`1.0` | このimbalance以下を目指して探索を停止する基準 |
-| `weight neigh FACTOR` | neighbor由来のrank重みと、その差の伸縮係数を使用する |
-
-`shift x`はshockがx方向へ進む今回の系に対応する。balance実行時には切断面探索の
-ための集約通信、粒子の所有rank変更、ghost再構築、neighbor list再構築が発生する。
-この時間はactionコストである。
-
-一方、変更されたpartitionは次のdecision以降にも残り、将来のPair・Comm時間を変える。
-したがってbalanceは、即時報酬だけでなく状態遷移と将来報酬を変えるactionである。
-
-### 9.4 `weight neigh factor`
-
-LAMMPS実装は、各rankについて次を計算する。
+\(M\)は正の整数で、neighbor list再構築を検討できるstep間隔である。前回のbuildから
+の経過step数を \(A\)、`delay`を \(D\) とすると、通常の候補step条件は
 
 \[
-w_r =
-\frac{\text{rank }r\text{のneighbor entry総数}}
-     {N_{\mathrm{local},r}}.
+A \geq D
+\quad\land\quad
+A \bmod M = 0
 \]
 
-これは、そのrankのlocal atom 1個当たり平均neighbor数である。同じrankが所有する
-local atomには、このrank平均から作られた共通重みが与えられる。各粒子固有の
-neighbor数を直接重みにしているわけではない。
+である。
 
-factorが1.0でない場合、rank間の最小重みを固定し、最大側との幅を伸縮する。
+`check yes`の場合、前回build時からの粒子 \(i\) の移動量を
+\(\lVert\Delta\mathbf{x}_i\rVert\) とすると、さらに
 
-- `factor = 1.0`：測定したrank間neighbor負荷差をそのまま使用する。
-- `factor > 1.0`：高neighbor rankをより重く見積もり、差を強調する。
-- `factor < 1.0`：rank間のneighbor負荷差を弱める。
+\[
+\max_i \lVert\Delta\mathbf{x}_i\rVert^2
+>
+\frac{(s^{\mathrm{skin}})^2}{4}
+\]
 
-高neighbor rankを重く評価すると、balanceはそのrank側へ割り当てる空間・粒子を
-減らそうとする。ただしfactorを大きくすれば常に速くなるわけではない。過度に強調
-すると`Nlocal`、`Nghost`、通信面積、Pair/Comm比率の別の偏りを生む可能性がある。
+が成立したときに再構築する。すなわち、少なくとも1粒子がskinの半分より大きく移動
+したことを判定する。
 
-今回のRLでは、次をhybrid actionとして扱った。
+今回の設定は
+
+\[
+M=1,\qquad D=0,\qquad \mathrm{check}=\mathrm{yes}
+\]
+
+であり、`every`も現在のbalance RL actionには含めていない。
+
+### 9.3 Balance実行有無：\(b\)
+
+one-shot balanceについて
+
+\[
+b\in\{0,1\}
+\]
+
+とする。
+
+- \(b=0\)：`balance`を実行せず、現在のMPI partitionを保持する。
+- \(b=1\)：指定されたbalanceパラメータでMPI partitionを再計算する。
+
+今回のRLでは、これは`skip`または`balance`という離散actionに対応する。
+
+### 9.4 Balanceの負荷と不均衡：\(L_r, I\)
+
+rank \(r\) が所有するlocal atom集合を \(\mathcal{P}_r\)、原子 \(i\) のbalance weightを
+\(w_i\) とすると、rank負荷は
+
+\[
+L_r = \sum_{i\in\mathcal{P}_r} w_i
+\]
+
+である。重みを指定しない場合は
+
+\[
+w_i=1,
+\qquad
+L_r=N_{\mathrm{local},r}
+\]
+
+となる。
+
+MPI rank数を \(P\) とすると、LAMMPSのbalance imbalance factorは
+
+\[
+I =
+\frac{\max_r L_r}
+     {\frac{1}{P}\sum_{r=1}^{P}L_r}
+\]
+
+である。
+
+### 9.5 Balance開始threshold：\(\theta\)
 
 ```text
-skip
-または
-balance ... weight neigh factor, factor in [0.5, 1.5]
+balance THRESH ...
 ```
 
-### 9.5 `fix balance`
+`THRESH`を \(\theta\) とする。初期不均衡 \(I_{\mathrm{init}}\) に対し、one-shot
+`balance`は基本的に
+
+\[
+I_{\mathrm{init}} \geq \theta
+\]
+
+のとき実行対象となる。今回のコマンドでは
+
+\[
+\theta=1.0
+\]
+
+である。
+
+### 9.6 Balance方向：\(d\)
+
+```text
+shift x
+```
+
+\(d\)は移動させるprocessor切断面の方向である。
+
+\[
+d \subseteq \{x,y,z\}
+\]
+
+今回のShock/NEMDでは
+
+\[
+d=\{x\}
+\]
+
+であり、x方向の切断面だけを変更する。
+
+### 9.7 最大反復数：\(K\) と停止threshold：\(\eta\)
+
+```text
+shift x NITER STOPTHRESH
+```
+
+`NITER`を \(K\)、`STOPTHRESH`を \(\eta\) とする。shift法は最大 \(K\) 回の切断面探索を
+行い、探索中の不均衡が
+
+\[
+I \leq \eta
+\]
+
+になれば停止する。
+
+今回の設定は
+
+\[
+K=10,\qquad \eta=1.0
+\]
+
+である。実際にはsubdomain幅にskin由来の制約があるため、常に厳密な \(I=1\) を達成
+できるとは限らない。
+
+### 9.8 Neighbor weight factor：\(f\)
+
+```text
+weight neigh FACTOR
+```
+
+factorを \(f>0\) とする。まずrank \(r\) のneighbor entry総数を \(E_r\)、local atom数を
+\(N_r=N_{\mathrm{local},r}\) とし、rank当たりの平均neighbor数を
+
+\[
+q_r=\frac{E_r}{N_r}
+\]
+
+と計算する。空rankは別扱いとなる。
+
+全非空rankに対して
+
+\[
+q_{\min}=\min_r q_r,
+\qquad
+q_{\max}=\max_r q_r
+\]
+
+を求める。\(q_{\min}\neq q_{\max}\) の場合、LAMMPS実装がfactorを適用したrank重みは
+
+\[
+q'_r
+=q_{\min}
++\frac{q_r-q_{\min}}{q_{\max}-q_{\min}}
+ \left(fq_{\max}-q_{\min}\right)
+\]
+
+である。
+
+そのrankが所有する各local atom \(i\in\mathcal{P}_r\) の既存weightは
+
+\[
+w'_i=w_i q'_r
+\]
+
+と更新される。したがって、各粒子固有のneighbor数を直接weightにするのではなく、
+rank平均 \(q_r\) から作った同一の係数を、そのrank内の全local atomへ掛ける。
+
+特別な場合は次のとおりである。
+
+- \(f=1\) なら \(q'_r=q_r\) となる。
+- \(f>1\) なら最大側の幅を拡大する。
+- \(0<f<1\) なら最大側の幅を縮小する。
+- \(q_{\min}=q_{\max}\) ならrank間差がないため、このneighbor weighting処理はskipされる。
+
+今回のRLにおける範囲は
+
+\[
+f\in[0.5,1.5]
+\]
+
+である。反実仮想実験ではこの連続範囲から
+
+\[
+f\in\{0.50,0.75,1.00,1.25,1.50\}
+\]
+
+を評価した。
+
+なお、この式では \(fq_{\max}<q_{\min}\) となるほど小さい \(f\) を選ぶと、変換後の
+重み勾配が反転し得る。LAMMPSの入力条件は \(f>0\) だけだが、実験上の安全・妥当範囲
+は別途定める必要がある。
+
+### 9.9 `fix balance`の頻度：\(F\)
 
 ```text
 fix ID all balance NFREQ THRESH shift x NITER STOPTHRESH ...
 ```
 
-`fix balance`は、run中に`NFREQ` stepごとに不均衡を確認し、thresholdを超えた場合に
-再分割するLAMMPS標準の動的heuristicである。
+`NFREQ`を \(F\) とすると、`fix balance`は
 
-これは「いつbalanceするか」をLAMMPS側の固定頻度・thresholdルールへ委ねる方式で
-ある。これに対して現在のRL環境は500 stepsごとのdecisionで`skip`またはone-shot
-`balance`を選び、実行時期とfactorを方策が決める。
+\[
+t \bmod F=0
+\]
 
-### 9.6 Actionの違い
+となるstepで不均衡を評価し、
 
-| Action | 直接変更するもの | 主な即時コスト | 次状態へ残るもの |
-|:---|:---|:---|:---|
-| skin | neighbor探索半径の余裕 | list再構築 | `Neighs`、`Nghost`、再構築頻度 |
-| every | 再構築判定可能なstep間隔 | 判定・再構築頻度 | listの更新時期、安全性 |
-| skip balance | partitionを変更しない | ほぼなし | 現在のpartitionを継承 |
-| one-shot balance | MPI subdomain境界 | 探索、通信、粒子移管、list再構築 | 新しいpartition |
-| balance factor | neighbor負荷差の評価強度 | balance本体と同じ | `Nlocal`・`Nghost`・`Neighs`の分布 |
-| fix balance | 再分割の頻度とthreshold | 定期判定と条件成立時の再分割 | heuristicで更新されたpartition |
+\[
+I_t>\theta
+\]
 
-skinとeveryはneighbor listの「大きさと寿命」を制御する。balance系はMPI rank間で
-「どの空間・粒子・neighbor計算を誰が担当するか」を制御する。両者は異なる経路で
-Pair、Neigh、Comm時間を変えるため、相互作用もあり得る。
+なら再分割する。これはone-shot `balance`とは別の制御パラメータである。現在のRLは
+`fix balance`の \(F\) や \(\theta\) をactionにはせず、500 stepsごとにone-shot
+balanceの有無 \(b\) とfactor \(f\) を選ぶ。
+
+### 9.10 現在のRL actionを数式で表したもの
+
+現在のbalance-hybrid RLで実際に変化させる成分は
+
+\[
+a_t=(b_t,f_t),
+\]
+
+\[
+b_t\in\{0,1\},
+\qquad
+f_t\in[0.5,1.5]\quad(b_t=1\text{のときのみ有効})
+\]
+
+である。その他は
+
+\[
+s^{\mathrm{skin}}=0.5,
+\quad M=1,
+\quad D=0,
+\quad \theta=1.0,
+\quad K=10,
+\quad \eta=1.0,
+\quad d=\{x\}
+\]
+
+へ固定している。
