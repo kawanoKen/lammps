@@ -16,6 +16,10 @@
 これは方策学習の実験ではない。同一checkpointから複数actionへ分岐し、
 `T(s,a)`とaction依存の状態遷移を直接測定する反実仮想実験である。
 
+LAMMPSにおける物理状態、software・性能状態、`Nlocal`・`Nghost`・`Neighs`、
+不均衡指標、粒子更新とMPI同期の詳細は
+[LAMMPS_STATE_AND_EXECUTION.md](LAMMPS_STATE_AND_EXECUTION.md)に整理した。
+
 ## 実行環境とworkload
 
 amp2はIntel Xeon Gold 6240Rを2基、物理48 core、メモリ768 GBを搭載する。
