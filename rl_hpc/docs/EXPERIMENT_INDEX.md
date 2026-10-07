@@ -6,6 +6,9 @@ checkpoint-fork comparisons and held-out live evaluations take precedence.
 
 ## Current result map
 
+Date- and machine-specific result bundles begin with
+[2026-10-07 — amp2](experiments/2026-10-07_amp2/README.md).
+
 | Experiment | Controlled action | Regime/state | Favored policy or action | Strength of conclusion | Documents |
 |---|---|---|---|---|---|
 | GPU LJ contention | neighbor skin and `every` | idle vs same-GPU contention | idle: about `(0.6,5)`; same-GPU load: about `(1.0,20)` | Positive state-action interaction; workload-specific | [results](experiments/gpu_lj_contention/RESULTS.md) |
