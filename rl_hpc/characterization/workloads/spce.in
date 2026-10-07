@@ -1,0 +1,46 @@
+# SPC/E water benchmark with long-range electrostatics.
+# The bundled 4,500-atom box is replicated to 36,000 atoms.
+
+variable        datafile index bench/POTENTIALS/data.spce
+variable        steps index 100
+variable        seed index 432567
+variable        skin index 2.0
+variable        neigh_every index 10
+variable        neigh_delay index 0
+variable        neigh_check index yes
+
+units           real
+atom_style      full
+
+read_data       ${datafile}
+replicate       2 4 1
+
+pair_style      lj/cut/coul/long 9.8 9.8
+kspace_style    pppm 1.0e-4
+
+pair_coeff      1 1 0.15535 3.166
+pair_coeff      * 2 0.0000 0.0000
+
+bond_style      harmonic
+angle_style     harmonic
+dihedral_style  none
+improper_style  none
+
+bond_coeff      1 1000.00 1.000
+angle_coeff     1 100.0 109.47
+
+special_bonds   lj/coul 0.0 0.0 0.5
+neighbor        ${skin} bin
+neigh_modify    delay ${neigh_delay} every ${neigh_every} check ${neigh_check}
+
+fix             shake all shake 0.0001 20 0 b 1 a 1
+fix             integrator all nvt temp 300.0 300.0 100.0
+
+velocity        all create 300 ${seed} dist uniform
+timestep        2.0
+
+thermo          50
+thermo_style    custom step temp pe ke etotal press cpu spcpu
+timer           normal
+
+run             ${steps}

@@ -1,0 +1,16 @@
+[Unit]
+Description=Shock/NEMD continuous-skin paired frozen-policy evaluation
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/work/kawano/lammps
+ExecStart=/home/kawano/miniconda3/bin/python -u /work/kawano/lammps/rl_hpc/characterization/shock/run_skin_evaluation.py
+Restart=on-failure
+RestartSec=30s
+KillMode=control-group
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=default.target

@@ -71,3 +71,13 @@ src/Makefile.package.settings-e
 /CLAUDE.local.md
 /.claude/settings.local.json
 /.claude/scheduled_tasks.lock
+
+# RL/HPC experiment outputs and locally generated Python wheels
+/rl_hpc/runs/
+/rl_hpc/*.whl
+/rl_hpc/characterization/raw/
+/rl_hpc/characterization/build/
+/rl_hpc/characterization/network_corunner/mpi_stream
+/rl_hpc/characterization/data/
+/rl_hpc/__pycache__/
+/rl_hpc/characterization/__pycache__/

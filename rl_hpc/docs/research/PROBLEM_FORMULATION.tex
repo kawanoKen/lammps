@@ -1,0 +1,449 @@
+\section{具体設定：LAMMPSを対象としたソフトウェアパラメータ制御}
+\label{sec:lammps-setting}
+
+本節では、前節で定義した共有HPC環境におけるソフトウェアパラメータ制御問題を、
+分子動力学シミュレータLAMMPS（Large-scale Atomic/Molecular Massively Parallel
+Simulator）に適用する場合の具体例を示す。
+ここで述べる状態・行動設計は現時点の仮説であり、最終的な問題設定ではない。
+各候補が実際に性能へ影響し、かつ状態に応じて望ましい行動が変化するかについては、
+別途行う初期特性評価によって検証する。
+
+\subsection{対象アプリケーション}
+
+LAMMPSは、原子・分子系の時間発展を計算する並列分子動力学シミュレータである。
+典型的な時間積分ループでは、粒子位置の更新、近傍粒子リストの構築、粒子間相互作用の
+計算、MPI rank間の粒子情報の通信、境界を越えた粒子の移動、各種拘束・統計処理などが
+反復される。計算時間の内訳は、物理モデルと系の状態に応じて、Pair、Neigh、Comm、
+KSpace、Modifyなどの処理へ分配される。
+
+LAMMPSでは、同じ物理問題を計算する場合でも、近傍リスト、領域分割、負荷分散、
+通信、アクセラレータなどの実装上の設定によって実行時間が変化し得る。
+一方、粒子配置、密度、温度、空間的不均一性などはシミュレーション中に変化し、
+それに伴って計算量やrank間負荷分布も変化する。このためLAMMPSは、アプリケーション
+内部の非定常性と計算機外部の資源競合を同時に扱うソフトウェア制御対象の候補となる。
+
+初期検討では、衝撃波の形成と伝播によって粒子密度および計算負荷の空間分布が時間的に
+変化するshock/NEMD系を主な対象候補とする。この系では、衝撃波面の移動に伴い、
+各MPI rankが担当する粒子数、近傍粒子数、通信量および計算時間の不均衡が変化する
+可能性がある。したがって、一回のシミュレーション内でsoftware stateが継続的に変化する
+例として利用できると考える。
+
+\subsection{Decision stepとepisode}
+
+LAMMPSの一定数のMD stepを一つのdecision intervalとし、その境界で状態を観測して
+software configurationを選択する。decision intervalを$H$ MD stepsとすると、時刻$t$の
+行動適用後にLAMMPSを$H$ steps進め、その実行時間を$\Delta\tau_t$として測定する。
+一つのepisodeは、所定の初期状態から終了stepまでの一回の連続したシミュレーションとする。
+
+決定間隔$H$にはトレードオフがある。短すぎる場合、測定雑音と設定変更コストが支配的に
+なり得る。長すぎる場合、状態変化への追従が遅れ、制御可能性を失う。このため$H$は、
+状態変化の時間尺度、性能測定の安定性、行動適用コストを測った上で決定する必要がある。
+
+\subsection{LAMMPSにおける状態}
+
+LAMMPSを対象とする場合も、状態を
+\begin{equation}
+  s_t=(x_t,m_t^{\mathrm{self}},m_t^{\mathrm{ext}})
+\end{equation}
+とする。以下は各成分の候補である。
+
+\subsubsection{Software state}
+
+software state $x_t$は、物理系、計算負荷、および現在の設定に関する観測量から構成する。
+候補として、次を考える。
+\begin{equation}
+  \begin{aligned}
+  x_t = (&x_t^{\mathrm{physical}},x_t^{\mathrm{load}},
+          x_t^{\mathrm{timing}},x_t^{\mathrm{config}},
+          x_t^{\mathrm{history}}).
+  \end{aligned}
+\end{equation}
+
+$x_t^{\mathrm{physical}}$は、温度、圧力、密度、box形状、原子数、および対象問題に固有な
+物理量などを表す。shock/NEMDの場合には、衝撃波面の位置や圧縮領域の大きさも解析用の
+指標となり得る。ただし、単なるsimulation stepや将来の進行を直接示す量に依存した方策は、
+異なる問題サイズや物理条件へ一般化しない可能性がある。そのため方策入力には、可能な限り
+現在の物理状態と計算状態を直接表す観測量を用いる。
+
+$x_t^{\mathrm{load}}$は、rankごとのlocal atom数、ghost atom数、neighbor数、それらの
+最大値・平均値・不均衡率、subdomain幅などを含む。例えばlocal atom数の不均衡を
+\begin{equation}
+ I_t^{\mathrm{atom}}
+ =\frac{\max_i N_{t,i}^{\mathrm{local}}}
+        {\frac{1}{n}\sum_{i=1}^{n}N_{t,i}^{\mathrm{local}}}
+\end{equation}
+と定義できる。同様にneighbor数やrank実行時間についても不均衡指標を構成できる。
+
+$x_t^{\mathrm{timing}}$は、直前のintervalにおけるPair、Neigh、Comm、KSpace、Modify、
+Otherの時間、throughput、neighbor-list再構築回数などを含む。これらは、現在の性能低下が
+粒子間力計算、近傍リスト、通信、長距離力計算のいずれに由来するかを示す候補である。
+
+$x_t^{\mathrm{config}}$は、現在のneighbor skin、負荷分散設定、および直前の行動などを
+含む。同じ観測状態でも現在設定が異なれば、設定変更コストと次に到達可能な設定が異なるため、
+現在設定はMarkov性を近似する上で重要である。
+
+$x_t^{\mathrm{history}}$は、前回の負荷分散からの経過interval数、前回の負荷分散コスト、
+直前の性能値などを含む。負荷不均衡が時間とともに蓄積する場合や、直近の観測だけでは
+状態を十分に識別できない場合に用いる。
+
+\subsubsection{Self machine state}
+
+$m_t^{\mathrm{self}}$は、自ジョブが計算機資源をどのように利用しているかを表す。
+候補には、プロセスCPU利用率、メモリ使用量、メモリ帯域の代理指標、MPI通信量、
+GPU utilization、GPU memory utilization、GPU power、clock、temperatureなどがある。
+これらはLAMMPS内部のtiming情報とは異なり、同じ処理が計算機上でどの程度効率よく
+実行されているかを示す。
+
+ただし、一般的なOSやGPU telemetryには、自ジョブと他ジョブの寄与を完全に分離できない
+ものがある。その場合、観測値を$m_t^{\mathrm{self}}$と$m_t^{\mathrm{ext}}$へ厳密に分解せず、
+混合されたmachine observationとして方策に与える設計も必要となる。
+
+\subsubsection{External machine state}
+
+$m_t^{\mathrm{ext}}$は、他ジョブによるCPU、memory、GPU、通信資源の競合を表す。
+候補には、システム全体のCPU利用率、load average、メモリ帯域圧力、GPU utilization、
+power、clock低下、同一GPU上のcompute process数、ネットワークまたはMPI通信性能などが
+含まれる。
+
+実環境では外部ジョブの種類や割当を直接観測できない場合があるため、方策にはground-truthの
+競合ラベルを与えず、ユーザー権限で取得可能なtelemetryから競合状態を推定させるのが自然で
+ある。競合ラベルは実験時の解析およびoracle比較にのみ利用する。
+
+\subsection{LAMMPSにおける行動}
+
+行動$a_t$は、物理問題を変更せず、実行中に安全に変更できるsoftware configurationから
+選ぶ必要がある。初期候補として、neighbor skinと負荷分散を考える。
+
+\subsubsection{Neighbor skin}
+
+LAMMPSのneighbor skinは、相互作用cutoffの外側に確保する近傍探索の余裕幅である。
+skinを大きくするとneighbor listに含まれる候補粒子が増えるため、listを使用するPair計算と
+メモリ量が増加し得る。一方、粒子がlistの有効範囲を逸脱するまでの時間が長くなり、
+neighbor listの再構築頻度を減らせる可能性がある。したがって最適skinは、粒子移動速度、
+密度、近傍数、PairとNeighの相対コスト、CPU/GPU性能および外部競合状態に依存し得る。
+
+skinは連続値として扱えるため、例えば安全性を確認した区間
+\begin{equation}
+  a_t^{\mathrm{skin}}\in[\delta_{\min},\delta_{\max}]
+\end{equation}
+からabsolute valueを選択する方法、または現在値からの変化量を選択する方法が考えられる。
+ただし、skinを変更するとneighbor listの再構築が必要になり得るため、そのコストも報酬へ
+含める。さらに、\texttt{neigh\_modify check yes}などの安全な再構築条件を維持し、dangerous
+neighbor buildや物理量の異常が生じる領域を行動空間から除外する。
+
+\subsubsection{Load balancing}
+
+LAMMPSの\texttt{balance}および\texttt{fix balance}は、MPI rank間の負荷不均衡を減らすため、
+空間領域の境界を再配置する機能である。shock/NEMDのように負荷の偏りが主に一方向へ進行する
+系では、x方向のshift分割が候補となる。
+
+負荷分散に関する行動は、例えば
+\begin{equation}
+ a_t^{\mathrm{balance}}
+ = (b_t,w_t,q_t,\eta_t,\ldots)
+\end{equation}
+と表せる。ここで$b_t$は負荷分散を実行するか否か、$w_t$は負荷推定方法または重み係数、
+$q_t$は反復回数、$\eta_t$は実行thresholdなどである。neighbor数を利用する重み付けは、
+rankごとの粒子数だけでなく、そのrankが持つ近傍相互作用数を負荷推定に反映する。
+
+重要なのは、負荷分散そのものに領域境界の探索、粒子移動、通信、neighbor list再構築などの
+コストがあることである。したがって、常にbalanceする方策が最適とは限らず、
+\begin{equation}
+ \text{将来得られる不均衡削減の利益}
+ > \text{現在のbalance実行コスト}
+\end{equation}
+となる状態でのみ実行することが望ましい。この実行有無とタイミングは、現在の不均衡だけで
+なく、不均衡の増加速度と残り計算期間にも依存するため、逐次意思決定問題となる可能性がある。
+
+初期的な行動空間としては、skinを固定してbalance有無と連続的なneighbor重みを制御する設計、
+またはbalance設定を固定してskinのみを連続制御する設計が考えられる。最初から多数の変数を
+同時制御すると原因の同定と学習が難しくなるため、単一変数の効果を確認した後に結合する。
+
+\subsection{遷移と非定常性}
+
+LAMMPSでは、行動は直後のintervalの性能だけでなく、次状態にも影響する。skinの変更は
+neighbor listのサイズと再構築履歴を変え、balanceの実行はrankごとの担当領域、local atom数、
+ghost atom数および通信パターンを変える。したがって、
+\begin{equation}
+ (x_{t+1},m_{t+1}^{\mathrm{self}})
+ \sim P_{\mathrm{self}}(\cdot\mid
+ x_t,m_t^{\mathrm{self}},m_t^{\mathrm{ext}},a_t)
+\end{equation}
+という作用依存遷移を持つ。
+
+一方、他ジョブによるcontentionは制御対象外である。例えばCPUまたはGPUを共有するジョブが
+開始・終了すると、同じLAMMPS内部状態と設定でもinterval実行時間が変化する。
+さらに、contentionによってPair、Neigh、Commなどの相対コストが異なって変化すれば、
+最適なsoftware configurationも変化する可能性がある。
+
+ただし、外部状態が観測できてもその将来遷移が未知であり、観測には遅延と雑音がある。
+厳密には完全観測MDPではなくPOMDPに近い可能性がある。その場合は、直近複数intervalの
+観測履歴やrecurrent policyを用いる拡張を検討するが、まずは現在値と短い履歴でMDP近似の
+妥当性を評価する。
+
+\subsection{報酬と科学的妥当性}
+
+報酬は前節と同様に、固定数$H$のMD stepsを完了するwall-clock timeを用いて
+\begin{equation}
+ r_t=-\Delta\tau_t
+\end{equation}
+とする。$\Delta\tau_t$にはPair、Neigh、Comm等の通常計算だけでなく、neighbor設定の変更、
+load balance、粒子移動、再初期化など行動によって発生したコストを含める。
+
+性能改善は、同一の科学計算をより短時間で完了した場合にのみ有効とみなす。したがって、
+dangerous neighbor build、NaN/Inf、異常な温度・圧力・エネルギー、simulation errorなどを
+監視する。物理条件や積分step幅を高速化のために変更する行動は対象外とする。
+
+\subsection{本研究設定との対応}
+
+LAMMPSは、本研究で想定する問題に次の点で対応している。
+\begin{enumerate}
+  \item 一回のsimulation内で、粒子分布、密度、近傍数、通信量、rank間不均衡が変化し得る。
+  \item ユーザー権限で変更できる複数のsoftware parameterが存在する。
+  \item 設定変更は自ジョブの資源利用状態と将来の計算状態に影響する。
+  \item CPU、GPU、memory、communication contentionにより、同じ計算の性能状態が変化し得る。
+  \item 固定量のMD計算に要するwall-clock timeを直接測定でき、総実行時間と報酬が一致する。
+  \item 設定変更や負荷分散に明示的なコストがあり、短期性能だけでなく将来利益との比較が必要に
+        なり得る。
+\end{enumerate}
+
+特に、負荷不均衡が時間とともに形成される系では、balanceを「どの値にするか」だけでなく、
+「いつ実行するか」が逐次的な制御問題になり得る。また、外部contentionが各処理成分へ異なる
+影響を与える場合には、同じsoftware stateでもmachine stateに応じて望ましい設定が変わり得る。
+
+\subsection{現時点で確定していない点}
+
+一方、LAMMPSを用いるだけで本問題が有意な強化学習問題になるとは限らない。少なくとも以下を
+実験的に確認する必要がある。
+\begin{enumerate}
+  \item 状態変化に対して、最適行動$a^*(s)$が測定雑音を超えて変化するか。
+  \item 最良の固定設定と状態依存設定の間に、実用的な総実行時間差が存在するか。
+  \item 単純なthreshold ruleまたは一段先のruntime predictorで十分ではないか。
+  \item 行動が将来状態へ与える影響により、長期returnを考慮する価値があるか。
+  \item ユーザーから取得可能な観測だけで、望ましい行動を識別できるか。
+  \item 学習時と異なる問題サイズ、MPI rank数、contention強度にも方策が一般化するか。
+\end{enumerate}
+
+例えば、あるbalance設定がすべての状態で常に最良ならば、動的制御ではなく固定設定で十分で
+ある。また、状態ごとの最良設定が異なっても差が測定変動と同程度なら、適応制御の利益はない。
+逆に、同一内部状態から複数行動へ分岐した比較により明確なranking reversalが観測され、
+その状態を実行中の観測量から識別できる場合には、本研究設定に適した制御余地がある。
+
+さらに、現在想定しているshock/NEMDの一部の制御候補はCPU実装に依存する可能性がある。
+例えば特定のload-imbalance重み付けがGPU/KOKKOS backendで同じ意味を持たない場合、
+CPUで学習した行動空間をそのままGPUへ移植できない。backendごとに利用可能な行動と実装経路を
+確認し、同一の意味を持つものだけを比較する必要がある。
+
+以上より、LAMMPSは本研究の具体例として有望であるが、現段階では仮説的な対象である。
+初期実験では、同一checkpointから複数行動へ分岐して$T(s,a)$を測定する方法、固定方策との
+比較、行動適用コストの測定、および外部contention下でのaction ranking比較を行う。
+これにより、観測可能な状態変化が実際に異なる制御判断へ結びつくかを確認した上で、
+強化学習問題としての最終的な状態・行動・decision intervalを確定する。
+
+\section{今後実施すべき実験}
+\label{sec:lammps-next-experiments}
+
+今後の実験では、強化学習器の性能を先に比較するのではなく、制御問題そのものが成立するかを
+段階的に確認する。検証すべき因果関係は、
+\begin{equation}
+ \text{状態変化}
+ \rightarrow \text{actionごとの性能応答の変化}
+ \rightarrow \text{最適actionの変化}
+ \rightarrow \text{固定方策に対する累積的利益}
+\end{equation}
+である。以下では各段階に明確な判定基準を設け、基準を満たさない場合には次段階の大規模学習を
+行わない。
+
+\subsection{共通実験条件}
+
+主対象には、内部状態が一episode中に変化するshock/NEMDを用いる。第一段階はCPU版、
+MPI 32 ranks、OpenMP 1 thread/rankで行い、物理系とMPI配置を固定する。episodeは一つの
+shock trajectoryを十分長く含む規模とし、decision intervalは暫定的に500 MD stepsとする。
+外部負荷を導入しないidle条件を最初に扱い、その後に同じ実験設計でCPU contentionを加える。
+
+全比較で以下を共通とする。
+\begin{itemize}
+  \item 同じ物理状態を保存したrestartからactionごとに独立processを起動する。
+  \item action実行順序を無作為化し、各条件を少なくとも5回反復する。
+  \item action適用時間を含むwall-clock timeを主評価値とする。
+  \item Pair、Neigh、Comm、Modify、neighbor build数、local atomおよびneighbor数のrank不均衡を
+        同時に記録する。
+  \item temperature、pressure、energy、atom count、dangerous build、NaN/Infを監視する。
+  \item best actionは平均値だけで決めず、paired differenceと95\%信頼区間を示す。
+  \item 最良候補の差が測定雑音と同程度なら、action reversalとは判定しない。
+\end{itemize}
+
+\subsection{実験1：idle環境における内部状態とaction surface}
+
+最初の目的は、外部contentionなしでも、shockの進行に伴って$a^*(s_t)$が変化するかを確認する
+ことである。一本の基準trajectoryから、pre-shock、front形成、伝播初期、中期、後期、強圧縮領域
+を含む8--10個のcheckpointを保存する。
+
+各checkpointで、まず次のabsolute action gridを比較する。
+\begin{equation}
+ \delta_{\mathrm{skin}}\in\{0.35,0.50,0.70\},
+\end{equation}
+\begin{equation}
+ a^{\mathrm{balance}}\in
+ \{\mathrm{skip},0.5,0.8,1.0,1.2,1.5\}.
+\end{equation}
+balance側の数値は、
+\texttt{balance 1.0 shift x 10 1.0 weight neigh FACTOR}
+の\texttt{FACTOR}を表す。したがって18 actions/checkpointとなる。安全性または実装上の問題が
+見つかった値は、理由を記録して除外する。粗いgridで曲率または境界最適が見られた場合のみ、
+該当範囲を追加点で局所的に細分化する。
+
+skinとbalanceを同時に変更すると原因が分離できないため、解析では次も行う。
+\begin{enumerate}
+  \item skinを0.50へ固定し、balance有無およびfactorの状態依存性を評価する。
+  \item balanceを一つの安全な固定設定へ固定し、skinの状態依存性を評価する。
+  \item 最後にskinとbalanceの交互作用を18-action gridで評価する。
+\end{enumerate}
+
+各checkpoint $s_i$について
+\begin{equation}
+ a^*(s_i)=\arg\min_a \overline{T}(s_i,a)
+\end{equation}
+を求める。ただし、bestと次点のpaired差の信頼区間が0をまたぐ場合、そのcheckpointでは
+一意のbestを主張せず、統計的に区別できないnear-optimal setを報告する。
+
+この実験の成立条件は、少なくとも二つのcheckpoint間でaction rankingが反転し、その差が
+反復測定の変動を超えることである。さらに、全checkpointで一つのactionを使うbest fixedと、
+checkpointごとにactionを選ぶdescriptive oracleを比較する。
+\begin{equation}
+ G_{\mathrm{state}}
+ =\frac{\sum_i T(s_i,a_{\mathrm{fixed}})
+             -\sum_i\min_a T(s_i,a)}
+            {\sum_i T(s_i,a_{\mathrm{fixed}})}.
+\end{equation}
+このoracleは、利用可能なaction grid内で後から最良値を選ぶ解析上の上限であり、実行可能な
+方策そのものではない。
+
+\subsection{実験2：balanceの回収時間と逐次価値}
+
+balanceには即時コストがあり、その利益は後続stepsで回収される。このため500 stepsだけの評価で
+balanceの価値を結論づけない。実験1で差が大きかったearly、middle、lateの3 checkpointと、
+代表的な4--6 actionsに絞り、評価horizonを
+\begin{equation}
+ H\in\{500,2000,5000\}\ \text{MD steps}
+\end{equation}
+として比較する。
+
+各試行では、action適用時間$C_{\mathrm{action}}$と、その後の累積MD実行時間を分けて記録する。
+balance action $a$のbreak-even horizonを、skipとの差
+\begin{equation}
+ D_a(h)=T(s,\mathrm{skip};h)-T(s,a;h)
+\end{equation}
+が正へ転じる最小の$h$として評価する。状態によってbreak-even horizonが大きく変わるなら、
+balance有無は将来状態と残存計算量を考慮すべき逐次行動となる。
+
+反対に、同じbalance actionが全状態・全horizonで直ちに優れる場合、制御問題は簡単な固定設定で
+解ける。全horizonでbalance利益がコストを回収しない場合、balanceをaction spaceから外す。
+
+\subsection{実験3：観測可能な状態変数の同定}
+
+実験1および2のデータを用いて、bestまたはnear-best actionの変化と対応する観測量を調べる。
+候補は、atom imbalance、neighbor imbalance、rank timing imbalance、Pair/Neigh/Comm比、
+neighbor build率、subdomain幅、temperature、pressure、前回balance後の経過interval数である。
+
+最初に単変量の散布図、状態区間別分布、rank相関を調べる。次に、step、decision index、
+shock位置を入力しない小規模なruntime predictor
+\begin{equation}
+ \widehat{T}(s,a)
+\end{equation}
+をepisode単位に分割して学習する。ここでの目的は高精度モデルの構築ではなく、実行時に観測可能な
+情報からaction差を予測できるかの確認である。
+
+異なる物理初期値から生成したepisodeをtrain/test間で分離する。個々のtransitionを無作為分割
+してはならない。予測器が未知episodeでaction rankingを再現できなければ、現在のstate設計では
+制御に必要な情報が不足していると判断する。
+
+\subsection{実験4：外部CPU contentionによるaction rankingの変化}
+
+内部状態だけの制御余地を確認した後、外部CPU contentionを導入する。各checkpointとactionを
+idleおよびCPU contentionの両方で測定し、
+\begin{equation}
+ T(s_{\mathrm{internal}},m^{\mathrm{ext}},a)
+\end{equation}
+を比較する。contention processは使用core、強度、開始終了時刻を固定し、LAMMPSと競合する
+資源を明示する。単なる総時間の増加ではなく、次の交互作用を検定対象とする。
+\begin{equation}
+ \left[T(s,m_{\mathrm{busy}},a_1)-T(s,m_{\mathrm{busy}},a_2)\right]
+ -\left[T(s,m_{\mathrm{idle}},a_1)-T(s,m_{\mathrm{idle}},a_2)\right].
+\end{equation}
+
+同じ内部checkpointでidleとcontentionのbest actionが有意に異なる場合に限り、外部負荷を観測する
+適応方策の根拠とする。contentionが全actionを同程度に遅くするだけなら、外部machine stateを
+方策入力へ追加しても制御利益は得られない。
+
+まず実験1で識別力の高かった6--8 actionsへ絞り、全18 actionsを再測定しない。外部負荷強度は
+idle、moderate、heavyの3段階とし、強度ラベルではなくCPU利用率、context switch、周波数などの
+実測telemetryも保存する。
+
+\subsection{実験5：非学習方策によるlive episode評価}
+
+action reversalと観測可能性が確認できた場合、強化学習の前に、完全なepisode上で次の非学習
+方策を比較する。
+\begin{enumerate}
+  \item Best fixed：全episodeを一つの設定で実行する。
+  \item Threshold rule：atomまたはneighbor imbalanceが閾値を超えたときだけbalanceする。
+  \item Phase rule：学習用trajectoryから得た固定scheduleでactionを切り替える。
+  \item Myopic predictor：$\widehat{T}(s,a)$が次intervalで最小と予測したactionを選ぶ。
+  \item Descriptive oracle：実験後に得た同一状態のcounterfactual値による解析上の上限。
+\end{enumerate}
+
+評価には学習・調整に使っていない物理初期値を最低5個用い、各初期値で全方策を同じ条件に
+対応付けて実行する。主指標は固定数のMD stepsを完了する総wall-clock timeであり、decisionごとの
+平均rewardだけではない。Best fixedとoracleの差が小さい、またはthreshold/predictorがoracle差の
+大部分を回収するなら、現設定でRLを採用する根拠は弱い。
+
+\subsection{実験6：強化学習の優位性評価}
+
+実験1--5により、状態依存action、累積利益、観測可能性が確認された場合のみ学習実験を行う。
+比較する方策は、Best fixed、Threshold rule、Phase rule、Myopic predictor、RL policyである。
+RL policyにはstep、decision index、shock位置、contentionのground-truth labelを入力しない。
+
+RLが必要となる主な仮説は、balanceの即時コストと将来利益のためにmyopic predictorでは不十分で
+あること、また現在のactionが領域分割や設定履歴を通して将来状態へ影響することである。
+これを検証するため、同じstate、action、training dataで、
+\begin{equation}
+ \gamma=0
+ \quad\text{と}\quad
+ \gamma>0
+\end{equation}
+を比較する。逐次RLの優位性は、未知の物理初期値と未知のcontention scheduleを用いたlive paired
+evaluationでのみ判定する。training rewardの上昇は優位性の証拠としない。
+
+最低限の成功条件は、RLがBest fixedだけでなく、最良の非学習baselineをも総実行時間で上回り、
+そのpaired confidence intervalが測定変動を超えることである。また、改善がdangerous build、
+異常物理、action clipping、特定初期値への過適合によるものでないことを確認する。
+
+\subsection{GPU実験の位置づけ}
+
+GPUはCPU実験の単純な再実行として扱わない。pair style、load-balance weighting、通信方式などが
+KOKKOS backendで同じ実装意味を持つかを先に確認する。CPUと同一のactionがGPU backendで無効、
+skip、または異なる経路になる場合は、別のaction spaceとして設計する。
+
+GPUで実施する最初の実験は、GPU対応する均質LJ workloadを用いた同一checkpoint・同一actionの
+idle/same-GPU-contention比較とする。これにより外部GPU loadでneighbor skinのrankingが変化するかを
+再確認する。shock/NEMDをGPUへ移すのは、必要なpair styleと計測経路を含むbuildが科学的に同等な
+実行を行えることを確認した後とする。
+
+\subsection{実施順序と停止基準}
+
+以上を次の順で実施する。
+\begin{enumerate}
+  \item 現在進行中のskin固定・hybrid balance実験を完了し、学習曲線ではなくheld-out live評価を行う。
+  \item 実験1のcheckpoint counterfactual gridにより、idleでのaction reversalを確認する。
+  \item 実験2でbalanceのbreak-even horizonを測定する。
+  \item 実験3で、action変化を実行時観測から識別可能か確認する。
+  \item 実験4でCPU contentionとのstate--action interactionを測る。
+  \item 実験5の非学習baselineを未知episodeで評価する。
+  \item 上記で十分な固定方策regretが残った場合のみ、実験6のRL比較へ進む。
+\end{enumerate}
+
+実験1で有意なaction reversalがなく、best fixedに対するoracle改善が1\%未満または測定変動以下で
+あれば、現在のaction spaceによる学習を停止する。reversalがあっても実験5で単純ruleまたはmyopic
+predictorがほぼ全利益を回収する場合、問題は状態依存最適化ではあるが、長期強化学習問題ではないと
+結論づける。RL実験へ進むのは、逐次的なaction costまたは到達可能性のために非学習baselineとの間に
+再現可能な性能差が残る場合である。
