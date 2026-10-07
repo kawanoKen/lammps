@@ -1,0 +1,49 @@
+{
+  "features": [
+    "atom imbalance",
+    "neighbor imbalance",
+    "ghost imbalance",
+    "Pair time / step",
+    "Neigh time / step",
+    "Comm time / step"
+  ],
+  "explained_variance_ratio": [
+    0.5425426444997669,
+    0.2451512821571665
+  ],
+  "components": {
+    "PC1": {
+      "atom imbalance": 0.48083434188053337,
+      "neighbor imbalance": -0.3605377039434574,
+      "ghost imbalance": 0.3761514595622458,
+      "Pair time / step": 0.2944489248246914,
+      "Neigh time / step": 0.5150820911901758,
+      "Comm time / step": 0.38119712640236975
+    },
+    "PC2": {
+      "atom imbalance": 0.3359793031899708,
+      "neighbor imbalance": 0.4208293870680115,
+      "ghost imbalance": 0.5916615655721763,
+      "Pair time / step": -0.5899138545410363,
+      "Neigh time / step": -0.03805009530679391,
+      "Comm time / step": -0.10252297840145719
+    }
+  },
+  "normalization_mean": {
+    "atom imbalance": 2.050317907846101,
+    "neighbor imbalance": 1.2957735847514016,
+    "ghost imbalance": 1.3010549979754298,
+    "Pair time / step": 0.007295052419354836,
+    "Neigh time / step": 0.0030052449999999984,
+    "Comm time / step": 0.0009046964516129028
+  },
+  "normalization_scale": {
+    "atom imbalance": 0.7860202159439632,
+    "neighbor imbalance": 0.17262047257061275,
+    "ghost imbalance": 0.26591141811961366,
+    "Pair time / step": 0.001174124952269789,
+    "Neigh time / step": 0.0008758156867269138,
+    "Comm time / step": 0.00012674026489428475
+  },
+  "source_note": "s_t is the observed heuristic-trajectory reference; exact reconstructed pre-action rank statistics were not logged"
+}

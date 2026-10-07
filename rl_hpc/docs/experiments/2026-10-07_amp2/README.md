@@ -1,57 +1,56 @@
-# 2026-10-07 — amp2 Shock/NEMD state-action characterization
+# 2026-10-07 amp2：Shock/NEMDの状態・行動特性調査
 
-## Identity and question
+## 実験の位置づけ
 
-- Date: 2026-10-07 (Asia/Tokyo)
-- Machine: `amp2.g2.gsic.titech.ac.jp` (`amp2`)
-- Repository branch: `rl-hpc-research`
-- LAMMPS base commit: `c8bd2ae5927ee236a8892dbd51c18a92cc9c33cf`
-- Result commits: `3be966cff1`, `20a1377d5f`
+- 実施日：2026-10-07（Asia/Tokyo）
+- マシン：`amp2.g2.gsic.titech.ac.jp`（amp2）
+- リポジトリブランチ：`rl-hpc-research`
+- LAMMPS基準コミット：`c8bd2ae5927ee236a8892dbd51c18a92cc9c33cf`
+- 本実験に関するコミット：`3be966cff1`、`20a1377d5f`
 
-This experiment asks two separate questions from the same physical shock state:
+本実験では、同一のshock物理状態から行動を分岐し、次の2点を調べた。
 
-1. Does the selected balance action change the next state distribution?
-2. Does that transition effect persist long enough to change the best
-   finite-horizon action?
+1. balance actionによって次状態が変化するか
+2. その状態遷移の影響が、将来の実行時間を変えるほど持続するか
 
-This is not a policy-learning experiment. It is a checkpoint-fork causal
-characterization of `T(s,a)` and the action-conditioned transition.
+これは方策学習の実験ではない。同一checkpointから複数actionへ分岐し、
+`T(s,a)`とaction依存の状態遷移を直接測定する反実仮想実験である。
 
-## Environment and workload
+## 実行環境とworkload
 
-The experiment ran on amp2 with 2 × Intel Xeon Gold 6240R CPUs, 48 physical
-cores, 768 GB RAM, GCC 15.2, Open MPI 5.0.10, and a dedicated MPI/SHOCK LAMMPS
-build at `build_shock_char/lmp`. Each trial used 32 MPI ranks, one OpenMP thread
-per rank, and no oversubscription or deliberate external contention.
+amp2はIntel Xeon Gold 6240Rを2基、物理48 core、メモリ768 GBを搭載する。
+GCC 15.2、Open MPI 5.0.10、およびMPI/SHOCK対応の専用LAMMPS build
+`build_shock_char/lmp`を使用した。各試行はMPI 32 ranks、OpenMP 1 thread/rank
+で実行した。oversubscribeおよび意図的な外部contentionは使用していない。
 
-The workload is an enlarged bundled `examples/PACKAGES/shock/nemd/in.nemd`:
+workloadは、LAMMPS同梱の
+`examples/PACKAGES/shock/nemd/in.nemd`を拡大したものである。
 
-- lattice dimensions: `nx=480`, `ny=nz=16`
-- atoms: 491,520
-- velocity seed: 47287
-- fixed physical initial restart
-- skin: 0.5
-- neighbor policy: `every 1 delay 0 check yes`
-- one decision interval: 500 MD steps
+- 格子サイズ：`nx=480`、`ny=nz=16`
+- 原子数：491,520
+- 速度seed：47287
+- 物理初期状態：全試行で固定
+- neighbor skin：0.5
+- neighbor設定：`every 1 delay 0 check yes`
+- 1 decision interval：500 MD steps
 
-## Frequently visited state collection
+## 頻出状態の採取
 
-The official heuristic
+次のLAMMPS公式heuristicを使用した。
 
 ```text
 fix balance 500 1.2 shift x 10 1.1 weight neigh 1.0
 ```
 
-was run from the same initial state in three independent processes. Each
-episode contained 120 × 500-step intervals. Total episode times were 831.998,
-832.665, and 833.174 s, giving CV 0.071%. All 360 transitions were safe.
+同一初期状態から独立processを3回起動した。各episodeは120 decision、すなわち
+60,000 MD stepsである。総実行時間は831.998、832.665、833.174秒で、CVは
+0.071%だった。360 transitionsはすべて安全に完了した。
 
-The physical trajectory was effectively identical across repetitions until a
-small late partition bifurcation. Eight representative states were chosen from
-observable application/partition features, excluding step and shock position
-from the selection distance.
+物理軌跡はほぼ完全に一致した。終盤のみ、領域分割の数値的な分岐がわずかに
+発生した。stepとshock位置を選択距離へ入れず、観測可能なapplication・分割状態
+から8個の代表状態を選んだ。
 
-| Phase | Step | Atom imbalance | Neighbor imbalance | Pair time/step |
+| Phase | Step | Atom不均衡 | Neighbor不均衡 | Pair時間/step |
 |---:|---:|---:|---:|---:|
 | 1 | 4,800 | 1.112 | 1.374 | 0.005210 |
 | 2 | 15,300 | 1.459 | 1.349 | 0.006627 |
@@ -62,28 +61,28 @@ from the selection distance.
 | 7 | 48,800 | 3.123 | 1.128 | 0.008161 |
 | 8 | 57,800 | 3.537 | 1.158 | 0.006775 |
 
-Here atom imbalance is maximum rank atom count divided by the mean. Neighbor
-imbalance is defined analogously for neighbor count. High atom imbalance is not
-automatically poor balance: dense shock regions can require more neighbor work,
-so a neighbor-weighted partition intentionally assigns them fewer atoms.
+Atom不均衡は、MPI rankごとの原子数について`最大値 / 平均値`で定義する。
+Neighbor不均衡も同様にneighbor数の`最大値 / 平均値`である。Atom不均衡が大きい
+ことだけでは、負荷分散が悪いとは限らない。shock後方の高密度領域では1原子あたり
+のneighbor計算量が大きいため、neighbor重み付き分割では、その領域を担当するrank
+へ意図的に少ない原子を割り当てる場合がある。
 
-## Immediate state × action matrix
+## 同一状態からの即時state × action比較
 
-At each representative physical checkpoint, independent MPI processes tested:
+各代表checkpointから独立processを起動し、次の6 actionを比較した。
 
-- skip balance
-- `weight neigh` factor 0.50, 0.75, 1.00, 1.25, or 1.50
+- balanceを実行しない（skip）
+- `weight neigh` factor：0.50、0.75、1.00、1.25、1.50
 
-Each action was repeated five times in randomized order, for 240 trials. All
-trials completed with zero dangerous builds, crashes, non-finite thermo values,
-or step mismatches.
+各actionをランダム順で5回測定し、合計240試行を実行した。dangerous build、
+crash、NaN/Inf、step不一致はすべて0件だった。
 
-A binary LAMMPS restart does not preserve nonuniform MPI domain boundaries.
-Consequently every fork first reconstructed the same factor-1.0 partition
-outside the reward timer. The measured interval then included the tested action
-and the following 500 steps.
+LAMMPSのbinary restartは物理状態を保存するが、不均等なMPI領域境界は保存しない。
+そのため各forkでは、計測開始前にfactor 1.0で共通のpre-action partitionを再構成
+した。この再構成時間は報酬へ含めていない。その後のaction適用時間と500-step実行
+時間を測定した。
 
-| Phase | Best action | Mean, s | Std, s | CV | Runner-up gap |
+| Phase | 最良action | 平均時間（秒） | 標準偏差 | CV | 次点との差 |
 |---:|:---|---:|---:|---:|---:|
 | 1 | skip | 4.6608 | 0.0163 | 0.35% | 2.36% |
 | 2 | factor 0.75 | 6.0743 | 0.0419 | 0.69% | 0.18% |
@@ -94,60 +93,98 @@ and the following 500 steps.
 | 7 | factor 0.75 | 6.7554 | 0.0889 | 1.32% | 4.55% |
 | 8 | factor 0.75 | 6.5513 | 0.0614 | 0.94% | 2.70% |
 
-Phase 2 is inconclusive because its ranking gap is below observed variability.
-Phases 1, 3, 4, 7, and 8 provide stronger candidate reversals.
+Phase 2は、action間の差が測定変動より小さく、優劣を判定できない。Phase 1、3、
+4、7、8では、より明確なaction reversal候補が得られた。
 
-The best fixed action over the eight equally weighted states was skip, with a
-summed mean of 52.4753 s. Selecting the measured winner at every state gave
-50.6628 s, a descriptive 3.45% improvement. This oracle is selected and
-evaluated on the same samples and is not an unbiased policy result.
+8状態を等しい重みで集計すると、Best Fixedはskipで、平均時間の合計は52.4753秒
+だった。各状態で測定上の最良actionを選ぶ記述的oracleは50.6628秒で、Best Fixed
+に対する改善余地は3.45%だった。ただし、このoracleは同じデータ上でactionを選択・
+評価しているため、未知状態に対する方策性能や不偏な改善率ではない。
 
-## Does action change the next state?
+## Actionによって次状態は変わるか
 
-Yes, for the software/execution part of the state. It does not measurably alter
-the physical trajectory over one interval.
+結論は次のとおりである。
 
-Across actions from the same checkpoint:
+> Software・MPI分割に関する次状態はactionによって大きく変わる。一方、物理的な
+> 次状態は、今回の500-step horizonではactionによって変化しなかった。
 
-- temperature, pressure, and density after 500 steps were identical;
-- rank-local atom, ghost, and neighbor distributions changed;
-- Pair, Neigh, and Comm timing changed;
-- repeated executions of the same action produced the same partition
-  statistics, while timing retained ordinary wall-clock noise.
+同一checkpointから異なるactionへ分岐した結果、次の量が変化した。
 
-For example, at phase 8 the resulting atom imbalance ranged from 1.916 at
-factor 0.50 to 3.994 at factor 1.50. Neighbor imbalance ranged from about 1.04
-to 1.41. Across the eight phases, the action-induced Comm-time spread was about
-3--19 times the pooled within-action standard deviation; the Pair-time spread
-was about 4--16 times that deviation.
+- MPI rankごとのlocal atom数
+- ghost atom数
+- neighbor数
+- atom・neighbor不均衡
+- Pair、Neigh、Comm時間
+- 500-step実行時間
 
-Thus the empirical transition is approximately:
+一方、500 steps後のtemperature、pressure、densityは全actionで同一だった。
+これはbalance actionが粒子座標や物理条件を変えず、MPI rankへの割当と実行性能を
+変更するためであり、期待どおりの結果である。
 
-```text
-physical next state: nearly action-independent
-software/partition next state: strongly action-dependent
-```
+例えばPhase 8では、500 steps後のatom不均衡がfactor 0.50の1.916からfactor 1.50
+の3.994まで変化した。Neighbor不均衡は約1.04から1.41まで変化した。同一actionの
+5反復では分割統計がほぼ完全に一致したため、idle環境における分割状態遷移はほぼ
+決定的だった。
 
-Equivalently, the current evidence supports
+action間のComm時間差は、同一action内のpooled標準偏差の約3～19倍、Pair時間差は
+約4～16倍だった。したがって、timingの変化も単なる実行時間ノイズでは説明できない。
+
+状態を物理状態とsoftware状態に分けると、今回の結果は概念的に次のように表せる。
 
 ```text
 P(x_physical,next | s,a) ≈ P(x_physical,next | s)
 P(x_software,next | s,a1) != P(x_software,next | s,a2)
 ```
 
-This conclusion excludes the trivial fact that the state records the selected
-configuration itself; the rank partition and timing signals also differ.
+これはstateに現在actionを記録したことによる自明な差ではない。action適用後のrank
+分割、neighbor負荷、Pair/Comm時間そのものが異なっている。
 
-## Persistence and finite-horizon reversal
+## PCAによる状態遷移の可視化
 
-The candidate winner and runner-up at phases 1, 3, 4, 7, and 8 were rerun in
-seven randomized independent pairs. The tested action was applied for the first
-500 steps. Both branches then used the same no-balance continuation for four
-more 500-step intervals. All 70 trials were safe.
+次の6変数を標準化し、全8状態の参照始点と240個のaction後状態を同じPCA空間へ
+射影した。
 
-Differences are first action minus second action; negative is faster.
+- atom不均衡
+- neighbor不均衡
+- ghost atom不均衡
+- Pair時間/step
+- Neigh時間/step
+- Comm時間/step
 
-| Phase | Comparison | Immediate difference, s (95% paired CI) | 2,500-step difference, s (95% paired CI) |
+PC1は54.3%、PC2は24.5%を説明し、2軸の累積寄与率は78.8%である。黒い菱形は
+heuristic軌跡で観測した参照状態、色付きの小点は各actionの5反復、白枠付きの大点は
+そのactionの平均終点を表す。
+
+![状態別PCA遷移図](state_action_pca_by_state.png)
+
+全状態を同じ座標へ重ねた図を以下に示す。
+
+![全状態PCA遷移図](state_action_pca_global.png)
+
+同じstate・同じactionの反復は狭いクラスタを形成する一方、action間の終点は分離
+している。特に後半のS6～S8ではfactorによる遷移方向の違いが大きい。これは、
+actionによる次software stateの変化が実行時間ノイズより大きいという数値集計と
+整合する。
+
+ただし、黒い始点は元のheuristic軌跡で観測した参照状態であり、各forkで計測直前に
+再構成したfactor 1.0 partitionのrank統計そのものではない。したがって、色付き終点
+のaction間分離は実測結果だが、黒い始点からの矢印長を厳密な状態変化量として解釈
+してはならない。今後、再構成直後のrank統計を直接収集すれば、厳密な
+`s_t -> s_{t+1}`図へ更新できる。
+
+PCAの係数、標準化統計、寄与率は
+[`state_action_pca_metadata.json`](state_action_pca_metadata.json)に保存した。
+
+## 状態遷移効果の持続性
+
+Phase 1、3、4、7、8について、即時比較で得られたwinner候補とrunner-up候補を
+独立に再測定した。最初の500 stepsだけ異なるactionを適用し、その後の4区間、
+2,000 stepsは両分岐ともbalanceを実行しなかった。各actionを7回測定し、合計70試行
+を実行した。全試行が安全に完了した。
+
+表の差は`最初に記載したaction − 2番目のaction`であり、負なら最初のactionが速い。
+
+| Phase | 比較 | 即時500 steps差（95% paired CI） | 累積2,500 steps差（95% paired CI） |
 |---:|:---|---:|---:|
 | 1 | skip − factor 1.0 | -0.0940 [-0.1121, -0.0758] | -0.4968 [-0.7739, -0.2196] |
 | 3 | factor 1.5 − skip | -0.3595 [-0.3893, -0.3297] | -6.4568 [-6.6274, -6.2862] |
@@ -155,49 +192,49 @@ Differences are first action minus second action; negative is faster.
 | 7 | factor 0.75 − factor 0.5 | -0.2585 [-0.3483, -0.1687] | -1.3467 [-1.6651, -1.0283] |
 | 8 | factor 0.75 − factor 0.5 | -0.2565 [-0.3572, -0.1557] | -0.1743 [-0.6565, +0.3080] |
 
-Phase 4 is the key sequential result. Factor 1.25 is faster over the immediate
-500-step action interval, but factor 1.0 is faster over the common-continuation
-2,500-step horizon. Phase 3 shows a strong persistent effect whose advantage
-grows in later segments. Phase 8 has a resolved immediate difference but an
-inconclusive cumulative ordering.
+Phase 4が最も重要な逐次制御結果である。最初の500 stepsではfactor 1.25が速いが、
+その後を同一actionに揃えた2,500-step累積ではfactor 1.0が速い。即時報酬を最大化
+するactionと、有限horizonの累積時間を最小化するactionが反転した。
 
-## Interpretation
+Phase 3ではfactor 1.5の効果が後続区間へ強く持続し、累積で6.46秒速かった。
+Phase 7でもfactor 0.75の優位が持続した。Phase 8は即時差が明確だった一方、累積差
+の95%信頼区間が0を含むため、長期的な優劣は判定できない。
 
-The amp2 results establish all of the following for the tested trajectory:
+## 現時点の解釈
 
-1. Shock evolution creates substantial endogenous load-state change.
-2. The preferred balance action changes with that state.
-3. Action changes the next software/partition state beyond simply changing the
-   recorded configuration field.
-4. The transition effect can persist for several decision intervals.
-5. Immediate and finite-horizon action rankings can reverse.
+amp2の固定初期状態・idle環境について、次を確認した。
 
-This supports an MDP/sequential-control formulation more strongly than a pure
-contextual-bandit formulation. It does not prove that reinforcement learning is
-better than model-predictive control, a learned transition/runtime model, or a
-carefully designed phase-aware controller.
+1. Shockの進行により、内発的なMPI負荷状態が大きく変化する。
+2. 状態によって最良のbalance actionが変化する。
+3. Actionは、設定値だけでなく次のMPI分割・負荷・timing状態を変える。
+4. Actionによる状態変化が複数decision intervalへ持続する場合がある。
+5. 即時最適actionと有限horizon最適actionが反転する状態が存在する。
 
-## Limitations
+したがって、現在の問題は純粋なcontextual banditよりも、MDPとしての逐次制御に
+近い。ただし、この結果だけでは強化学習がmodel-predictive control、遷移・runtime
+予測モデル、またはphase-awareなrule-based controllerより優れるとはいえない。
 
-- One fixed physical initial state and one machine were used.
-- There was no deliberate external contention.
-- Representative states came from one official heuristic's occupancy
-  distribution; other policies may visit additional states.
-- The eight-state oracle is descriptive and in-sample.
-- Only selected action pairs received the 2,500-step persistence test.
-- Cross-machine reproducibility remains to be measured.
+## 限界
 
-## Artifacts
+- 物理初期状態は1種類だけである。
+- マシンはamp2だけである。
+- 意図的な外部contentionは入れていない。
+- 代表状態は1つの公式heuristicが訪問する状態分布から選んだ。
+- 8状態のoracle値はin-sampleの記述値である。
+- 2,500-step持続効果を測定したのは選択したaction pairだけである。
+- 他マシンでの再現性は未確認である。
 
-Generated data are ignored by Git:
+## 関連データと文書
+
+生データはGit管理外で、以下に保存されている。
 
 - `rl_hpc/characterization/data/shock_official_state_trajectory_fixed47287_v1/`
 - `rl_hpc/characterization/data/shock_representative_checkpoints_fixed47287_v1/`
 - `rl_hpc/characterization/data/shock_representative_balance_forks_main_v1/`
 - `rl_hpc/characterization/data/shock_balance_persistence_main_v1/`
 
-Related committed documents:
+関連文書：
 
-- [Detailed state-action results](../shock_balance_hybrid/REPRESENTATIVE_STATE_ACTION_RESULTS.md)
-- [Portable cross-machine reproduction protocol](../shock_balance_hybrid/PORTABLE_REPRODUCTION.md)
-- [amp2 machine record](../../environment/MACHINE.md)
+- [state-action詳細結果](../shock_balance_hybrid/REPRESENTATIVE_STATE_ACTION_RESULTS.md)
+- [他マシン向け再現手順](../shock_balance_hybrid/PORTABLE_REPRODUCTION.md)
+- [amp2環境情報](../../environment/MACHINE.md)
