@@ -296,8 +296,8 @@ shockが伝播すると、圧縮領域の密度と1粒子当たりneighbor数が
 - 最適なMPI領域境界
 
 したがって、原子数だけを均等化するbalanceが常に最良とは限らない。`weight neigh`
-はneighbor計算量の大きい領域へ高い重みを与え、その領域を担当するsubdomainを狭く
-するための機構である。
+はrankごとの平均neighbor数から計算重みを作り、neighbor計算量の大きいrank側の
+subdomainを狭くするための機構である。
 
 要点をまとめると、次のとおりである。
 
@@ -308,3 +308,160 @@ shockが伝播すると、圧縮領域の密度と1粒子当たりneighbor数が
 - software状態：その物理系をどの分割・設定で計算しているか
 - 性能状態：Pair、Neigh、Commなど、どこへ実時間を使っているか
 
+## 9. 制御action
+
+今回検討している主要actionは、neighbor skin、`neigh_modify every`、およびbalance
+系設定である。いずれも物理ポテンシャルを変更するパラメータではないが、不適切な
+neighbor設定は必要なpairを欠落させ得るため、安全性確認が必要である。
+
+### 9.1 Neighbor skin
+
+```text
+neighbor SKIN bin
+```
+
+skinは、力のcutoff外側へ追加するneighbor listの余裕幅である。listには概ね
+
+\[
+r_{\mathrm{cut}} + r_{\mathrm{skin}}
+\]
+
+以内のpair候補が登録される。
+
+skinを小さくした場合は、`Neighs`と`Nghost`が減り、毎stepのPair・Commコストを
+抑えやすい。一方、粒子がskinの半分程度移動するまでの時間が短くなり、neighbor
+listを頻繁に再構築する。
+
+skinを大きくした場合は、listを長く使えるため再構築頻度を下げやすい。一方、余分な
+pair候補とghost atomが増え、Pair・Comm・メモリコストが増える。
+
+したがってskinは、次のトレードオフを制御する連続値actionである。
+
+```text
+小さいskin：短いlist、再構築が多い
+大きいskin：長いlist、再構築が少ない
+```
+
+skin変更後はneighbor listの再構築が必要になる。物理的なcutoffは変えないため、
+安全に再構築されて必要pairが保持される限り、意図する物理モデルは変わらない。
+ただし演算順序が変わるため、浮動小数点レベルで軌跡は分岐し得る。
+
+### 9.2 `neigh_modify every`
+
+```text
+neigh_modify every M delay D check yes
+```
+
+`every M`は「M stepごとに必ず再構築する」という意味ではない。`delay`条件を満たした
+後、M step間隔で再構築の可否を判定する。
+
+`check yes`の場合、その判定stepで少なくとも1粒子が前回構築時からskinの半分より
+大きく移動していれば、実際に再構築する。
+
+今回の設定は次のとおりである。
+
+```text
+neigh_modify every 1 delay 0 check yes
+```
+
+これは毎step判定を許可し、必要になった最初のstepで再構築できる保守的な設定である。
+
+- 小さい`every`：判定コストは増えるが、必要な再構築を早く実行できる。
+- 大きい`every`：判定回数と再構築候補stepを減らせるが、その間の粒子移動が大きいと
+  pair欠落やdangerous buildの危険が増える。
+
+`every`は整数actionである。性能だけでなく正しさへ影響し得るため、temperature、
+timestep、skin、最大粒子速度に応じた安全範囲が必要である。現在のShock/balance
+実験では`every=1`へ固定し、RL actionには含めていない。
+
+### 9.3 One-shot `balance`
+
+```text
+balance THRESH shift x NITER STOPTHRESH [weight ...]
+```
+
+`balance`は、その時点で一度だけMPI subdomain境界を再計算するactionである。変更後の
+領域分割は、その後のrunへ持続する。
+
+今回の代表的なactionは次である。
+
+```text
+balance 1.0 shift x 10 1.0 weight neigh FACTOR
+```
+
+各引数の意味は次のとおりである。
+
+| 引数 | 意味 |
+|:---|:---|
+| 最初の`1.0` | balanceを実行するimbalance threshold |
+| `shift x` | x方向のMPI切断面だけを移動する |
+| `10` | x方向の切断面探索の最大反復数 |
+| 次の`1.0` | このimbalance以下を目指して探索を停止する基準 |
+| `weight neigh FACTOR` | neighbor由来のrank重みと、その差の伸縮係数を使用する |
+
+`shift x`はshockがx方向へ進む今回の系に対応する。balance実行時には切断面探索の
+ための集約通信、粒子の所有rank変更、ghost再構築、neighbor list再構築が発生する。
+この時間はactionコストである。
+
+一方、変更されたpartitionは次のdecision以降にも残り、将来のPair・Comm時間を変える。
+したがってbalanceは、即時報酬だけでなく状態遷移と将来報酬を変えるactionである。
+
+### 9.4 `weight neigh factor`
+
+LAMMPS実装は、各rankについて次を計算する。
+
+\[
+w_r =
+\frac{\text{rank }r\text{のneighbor entry総数}}
+     {N_{\mathrm{local},r}}.
+\]
+
+これは、そのrankのlocal atom 1個当たり平均neighbor数である。同じrankが所有する
+local atomには、このrank平均から作られた共通重みが与えられる。各粒子固有の
+neighbor数を直接重みにしているわけではない。
+
+factorが1.0でない場合、rank間の最小重みを固定し、最大側との幅を伸縮する。
+
+- `factor = 1.0`：測定したrank間neighbor負荷差をそのまま使用する。
+- `factor > 1.0`：高neighbor rankをより重く見積もり、差を強調する。
+- `factor < 1.0`：rank間のneighbor負荷差を弱める。
+
+高neighbor rankを重く評価すると、balanceはそのrank側へ割り当てる空間・粒子を
+減らそうとする。ただしfactorを大きくすれば常に速くなるわけではない。過度に強調
+すると`Nlocal`、`Nghost`、通信面積、Pair/Comm比率の別の偏りを生む可能性がある。
+
+今回のRLでは、次をhybrid actionとして扱った。
+
+```text
+skip
+または
+balance ... weight neigh factor, factor in [0.5, 1.5]
+```
+
+### 9.5 `fix balance`
+
+```text
+fix ID all balance NFREQ THRESH shift x NITER STOPTHRESH ...
+```
+
+`fix balance`は、run中に`NFREQ` stepごとに不均衡を確認し、thresholdを超えた場合に
+再分割するLAMMPS標準の動的heuristicである。
+
+これは「いつbalanceするか」をLAMMPS側の固定頻度・thresholdルールへ委ねる方式で
+ある。これに対して現在のRL環境は500 stepsごとのdecisionで`skip`またはone-shot
+`balance`を選び、実行時期とfactorを方策が決める。
+
+### 9.6 Actionの違い
+
+| Action | 直接変更するもの | 主な即時コスト | 次状態へ残るもの |
+|:---|:---|:---|:---|
+| skin | neighbor探索半径の余裕 | list再構築 | `Neighs`、`Nghost`、再構築頻度 |
+| every | 再構築判定可能なstep間隔 | 判定・再構築頻度 | listの更新時期、安全性 |
+| skip balance | partitionを変更しない | ほぼなし | 現在のpartitionを継承 |
+| one-shot balance | MPI subdomain境界 | 探索、通信、粒子移管、list再構築 | 新しいpartition |
+| balance factor | neighbor負荷差の評価強度 | balance本体と同じ | `Nlocal`・`Nghost`・`Neighs`の分布 |
+| fix balance | 再分割の頻度とthreshold | 定期判定と条件成立時の再分割 | heuristicで更新されたpartition |
+
+skinとeveryはneighbor listの「大きさと寿命」を制御する。balance系はMPI rank間で
+「どの空間・粒子・neighbor計算を誰が担当するか」を制御する。両者は異なる経路で
+Pair、Neigh、Comm時間を変えるため、相互作用もあり得る。

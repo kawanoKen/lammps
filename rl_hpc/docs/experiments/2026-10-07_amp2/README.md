@@ -94,9 +94,11 @@ neighbor skinは0.5に固定した。行動は次の6種類である。
 | factor 1.25 | `balance 1.0 shift x 10 1.0 weight neigh 1.25` |
 | factor 1.50 | `balance 1.0 shift x 10 1.0 weight neigh 1.50` |
 
-`factor`は、各原子へ与えるneighbor-count由来の計算重みの強さを表す。大きなfactor
-ほどneighbor数の多い原子を重く評価して領域分割する。これは物理モデルの係数では
-なく、MPI load balancingのための実行パラメータである。
+`factor`はneighbor-count由来の計算重みについて、rank間の差を伸縮する係数である。
+実装は各rankの「総neighbor数 / local atom数」を求め、そのrank内のlocal atomへ
+共通の重みを与える。factorが1より大きいと高neighbor rankと低neighbor rankの重み差
+を強調し、1より小さいとその差を弱める。これは物理モデルの係数ではなく、MPI load
+balancingのための実行パラメータである。
 
 ### 状態遷移
 
