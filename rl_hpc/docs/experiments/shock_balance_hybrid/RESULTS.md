@@ -11,7 +11,17 @@
 Values are mean +/- sample standard deviation over four paired runs per cell
 (two held-out physical seeds and two schedule repetitions).
 
-| Regime | Idle-trained | CPU-jitter-trained | Always skip | Fixed 1.5 | Threshold 1.5 |
+The baseline labels mean:
+
+- `Always skip`: never invoke one-shot `balance`.
+- `Fixed factor 1.5`: invoke one-shot `balance ... weight neigh 1.5` at every
+  500-step decision.
+- `Atom-threshold 1.5`: before each decision, compute
+  `Nlocal_max/Nlocal_mean`; invoke one-shot `balance ... weight neigh 1.5`
+  when this value is at least 1.5, and otherwise skip.  This is a custom
+  observable rule, not the threshold argument of LAMMPS `fix balance`.
+
+| Regime | Idle-trained | CPU-jitter-trained | Always skip | Fixed factor 1.5 | Atom-threshold 1.5 |
 |---|---:|---:|---:|---:|---:|
 | Idle | **788.29 +/- 4.15 s** | 814.88 +/- 5.73 s | 2120.85 +/- 5.57 s | 932.16 +/- 5.84 s | 972.52 +/- 9.41 s |
 | CPU jitter | 920.18 +/- 5.18 s | **909.58 +/- 11.25 s** | 2587.67 +/- 9.91 s | 988.25 +/- 6.94 s | 1035.29 +/- 10.80 s |
