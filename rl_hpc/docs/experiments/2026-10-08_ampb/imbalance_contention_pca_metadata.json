@@ -1,0 +1,43 @@
+{
+  "source": "/data2/kawano/lammps/rl_hpc/characterization/data/portable_balance_contention_main_v3/measurements.jsonl",
+  "source_sha256": "671fd0f18565910f13a0bb7b74384fa2503d02f423450721059cee050644c4d5",
+  "features": [
+    "atom imbalance",
+    "neighbor imbalance",
+    "ghost imbalance"
+  ],
+  "fit": "240 idle endpoints, population-standardized; identical fixed transform for both conditions",
+  "mean": [
+    2.031856282552082,
+    1.2821593973805636,
+    1.3086850569217003
+  ],
+  "scale": [
+    0.7943815556359977,
+    0.1744110496420948,
+    0.26330680042917926
+  ],
+  "components": [
+    [
+      0.7041569929514159,
+      -0.254066813003365,
+      0.6630331694628354
+    ],
+    [
+      0.01915037057726394,
+      0.940247097670022,
+      0.3399539066253744
+    ]
+  ],
+  "explained_variance_ratio": [
+    0.6499543467480432,
+    0.32832761664284943,
+    0.021718036609107417
+  ],
+  "maximum_paired_feature_difference": 0.0,
+  "counts": {
+    "idle": 240,
+    "contention": 240
+  },
+  "reference_note": "Heuristic trajectory reference; not measured reconstructed pre-action state"
+}

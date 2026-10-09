@@ -1,0 +1,46 @@
+{
+  "features": [
+    "atom imbalance",
+    "neighbor imbalance",
+    "ghost imbalance"
+  ],
+  "excluded_features": [
+    "Pair time / step",
+    "Neigh time / step",
+    "Comm time / step",
+    "runtime",
+    "action factor",
+    "step",
+    "shock position"
+  ],
+  "explained_variance_ratio": [
+    0.6510260676302158,
+    0.3271592151391889
+  ],
+  "components": {
+    "PC1": {
+      "atom imbalance": 0.7034450056645806,
+      "neighbor imbalance": -0.26026092590783145,
+      "ghost imbalance": 0.6613844377146748
+    },
+    "PC2": {
+      "atom imbalance": 0.023097212257030743,
+      "neighbor imbalance": 0.9384240977199774,
+      "ghost imbalance": 0.34471253473640845
+    }
+  },
+  "normalization_mean": {
+    "atom imbalance": 2.0311764952956985,
+    "neighbor imbalance": 1.2808188379365826,
+    "ghost imbalance": 1.3065516570097475
+  },
+  "normalization_scale": {
+    "atom imbalance": 0.791968254236601,
+    "neighbor imbalance": 0.1726022451035225,
+    "ghost imbalance": 0.26273412458673984
+  },
+  "standardization": "population std ddof=0",
+  "fitted_points": "8 heuristic reference states + 240 post-action states",
+  "source_sha256": "93d106bb1d8c1c87f6a23a4dbe40ef67c228f4ebe1350664b507b8c28b782f2a",
+  "source_note": "reference is heuristic-trajectory state, not exact reconstructed pre-action partition; arrows are reference-to-endpoint comparisons, not exact delta"
+}
