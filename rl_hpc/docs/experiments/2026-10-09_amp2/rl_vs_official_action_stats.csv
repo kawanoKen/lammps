@@ -1,0 +1,15 @@
+regime,policy,balance_event_percent,selected_factor_mean,selected_factor_sd,segments
+jitter,idle_trained,96.66666666666667,0.9744808855644548,0.28423788842908587,480
+jitter,jitter_trained,94.375,1.24016729392097,0.3887225179199969,480
+idle,jitter_trained,94.79166666666667,1.2463827541656574,0.3879643795074317,480
+idle,idle_trained,96.45833333333333,0.9747052995294041,0.28545761710752415,480
+jitter,official_atoms,97.5,,,480
+jitter,official_neigh_10,99.16666666666667,,,480
+idle,official_atoms,97.5,,,480
+idle,official_neigh_10,99.16666666666667,,,480
+jitter,official_neigh_15,100.0,,,480
+jitter,official_time_10,99.58333333333333,,,480
+idle,official_time_10,99.16666666666667,,,480
+idle,official_neigh_15,100.0,,,480
+idle,official_neigh_08,98.33333333333333,,,480
+jitter,official_neigh_08,98.33333333333333,,,480

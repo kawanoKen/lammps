@@ -20,7 +20,7 @@ import online_balance_hybrid as hybrid
 import shock_counterfactual as base
 
 
-POLICIES = ('official_atoms', 'official_neigh_10', 'official_neigh_15',
+POLICIES = ('official_atoms', 'official_neigh_08', 'official_neigh_10', 'official_neigh_15',
             'official_time_10', 'learned_idle', 'learned_jitter')
 TRAINING = {
     'learned_idle': 'shock_balance_hybrid_idle_v1',
@@ -63,6 +63,7 @@ def fix_command(policy: str) -> str | None:
               f'{NITER} {STOPTHRESH}')
     return {
         'official_atoms': prefix,
+        'official_neigh_08': prefix + ' weight neigh 0.8',
         'official_neigh_10': prefix + ' weight neigh 1.0',
         'official_neigh_15': prefix + ' weight neigh 1.5',
         'official_time_10': prefix + ' weight time 1.0',
