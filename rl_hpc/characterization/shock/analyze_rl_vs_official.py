@@ -131,7 +131,14 @@ def plot(rows: list[dict], summary: list[dict]) -> None:
     title = ImageFont.truetype(bold_path, 27)
     draw.text((width / 2, 18), "Shock/NEMD matched live evaluation (mean, 95% t-CI, n=4)",
               fill="black", font=title, anchor="ma")
-    y_min, y_max = 740.0, 1180.0
+    # Include every measured value and confidence interval on a shared scale.
+    upper = max(
+        max(row["total_seconds"] for row in rows),
+        max(item["mean_seconds"] + item["ci95_half_seconds"] for item in summary),
+    )
+    tick_step = 100.0
+    y_min = 0.0
+    y_max = math.ceil(upper * 1.05 / tick_step) * tick_step
     top, bottom = 90, 625
     for panel, regime in enumerate(REGIME):
         left = 90 + panel * 880
@@ -141,7 +148,7 @@ def plot(rows: list[dict], summary: list[dict]) -> None:
             return bottom - (value - y_min) / (y_max - y_min) * (bottom - top)
         draw.line((left, top, left, bottom), fill="black", width=2)
         draw.line((left, bottom, right, bottom), fill="black", width=2)
-        for tick in range(800, 1200, 100):
+        for tick in range(0, int(y_max) + 1, int(tick_step)):
             y = sy(tick)
             draw.line((left, y, right, y), fill="#dddddd", width=1)
             draw.text((left - 10, y), str(tick), fill="black", font=small, anchor="rm")
