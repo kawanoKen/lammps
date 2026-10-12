@@ -150,12 +150,19 @@ def timing_blocks(text: str) -> list[dict[str, Any]]:
         def rank_stat(name: str) -> dict[str, float] | None:
             found = re.search(rf"{name}:\s+([0-9.eE+-]+) ave\s+([0-9.eE+-]+) max\s+([0-9.eE+-]+) min", block)
             return None if not found else {"mean": float(found.group(1)), "max": float(found.group(2)), "min": float(found.group(3))}
+        neighs = rank_stat("Neighs")
+        full_neighs = rank_stat("FullNghs")
+        # KOKKOS full neighbor lists report Neighs=0 and the actual count as
+        # FullNghs.  Preserve one backend-independent logical field.
+        if neighs and neighs["mean"] == 0.0 and full_neighs:
+            neighs = full_neighs
         blocks.append({
             "loop_seconds": float(match.group(1)), "mpi_ranks": int(match.group(2)), "steps": int(match.group(3)),
             "timing_avg_seconds": sections,
             "neighbor_builds": int((re.findall(r"Neighbor list builds =\s*(\d+)", block) or ["0"])[-1]),
             "dangerous_builds": int((re.findall(r"Dangerous builds =\s*(\d+)", block) or ["0"])[-1]),
-            "nlocal": rank_stat("Nlocal"), "nghost": rank_stat("Nghost"), "neighs": rank_stat("Neighs"),
+            "nlocal": rank_stat("Nlocal"), "nghost": rank_stat("Nghost"),
+            "neighs": neighs, "full_neighs": full_neighs,
         })
     return blocks
 

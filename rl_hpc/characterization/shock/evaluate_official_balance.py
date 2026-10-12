@@ -27,6 +27,7 @@ TRAINING = {
     'learned_jitter': 'shock_balance_hybrid_cpu_jitter_v1',
 }
 NFREQ, THRESH, NITER, STOPTHRESH = 500, 1.2, 10, 1.1
+INITIAL_BALANCE = 'balance 1.0 shift x 10 1.0 weight neigh 1.5 out initial.mesh'
 
 
 def digest(path: Path) -> str:
@@ -104,8 +105,7 @@ def run_episode(root: Path, spec: dict, policy: str, regime: str, repeat: int,
         setup = base.fork_input(restart, hybrid.SKIN, 'none', 500, 50).split(
             'variable action_start timer')[0]
         setup += (f'\nneighbor {hybrid.SKIN:g} bin\nrun 0 post no\n'
-                  'balance 1.0 shift x 10 1.0 weight neigh 1.5 '
-                  'out initial.mesh\nrun 50\n' + collector.OBS)
+                  f'{INITIAL_BALANCE}\nrun 50\n' + collector.OBS)
         state = collector.observation(sim.execute(setup), hybrid.SKIN, 1.5,
                                       expected_atoms=expected_atoms)
         state['partition_mesh'] = (directory / 'initial.mesh').read_text()
@@ -282,7 +282,7 @@ def main() -> None:
         'cpu_cores':list(cores), 'schedule':schedules,
         'official_parameters':{'Nfreq':NFREQ,'thresh':THRESH,'style':'shift x',
                                'Niter':NITER,'stopthresh':STOPTHRESH},
-        'common_initial_balance':'weight neigh 1.5 followed by 50 warmup steps',
+        'common_initial_balance':INITIAL_BALANCE + '; followed by 50 warmup steps',
         'run_order':[{'seed':s['physical_seed'],'regime':r,'repeat':q,'policy':p}
                      for s,r,q,_k,p in jobs],
         'reward':'negative measured 500-step run wall time including fix balance',

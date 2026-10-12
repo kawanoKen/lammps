@@ -1,0 +1,17 @@
+# Short restart-based Shock/NEMD smoke test shared by CPU and KOKKOS/CUDA.
+# Required command-line variables: restart, params, steps.
+
+include ${params}
+read_restart ${restart}
+
+# These integration and wall fixes are not stored in a binary restart.
+fix mynve all nve
+fix xwalls all wall/reflect xlo EDGE xhi EDGE
+
+neighbor 0.5 bin
+neigh_modify every 1 delay 0 check yes
+thermo ${steps}
+thermo_style custom step atoms temp pe ke etotal press density
+run ${steps}
+
+print "SMOKE_FINAL step=$(step) atoms=$(atoms) temp=$(temp:%.16g) pe=$(pe:%.16g) ke=$(ke:%.16g) etotal=$(etotal:%.16g) press=$(press:%.16g) density=$(density:%.16g)"

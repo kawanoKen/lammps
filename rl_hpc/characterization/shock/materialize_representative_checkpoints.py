@@ -13,6 +13,8 @@ import evaluate_official_balance as official
 import online_balance_hybrid as hybrid
 import shock_counterfactual as base
 
+POLICY = "official_neigh_10"
+
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -45,11 +47,10 @@ def main() -> None:
         setup = base.fork_input(restart, hybrid.SKIN, "none", 500, 50).split(
             "variable action_start timer")[0]
         setup += (f"\nneighbor {hybrid.SKIN:g} bin\nrun 0 post no\n"
-                  "balance 1.0 shift x 10 1.0 weight neigh 1.5 "
-                  "out initial.mesh\nrun 50\n" + collector.OBS)
+                  f"{official.INITIAL_BALANCE}\nrun 50\n" + collector.OBS)
         state = collector.observation(simulation.execute(setup), hybrid.SKIN, 1.5,
                                       expected_atoms=args.expected_atoms)
-        simulation.execute(official.fix_command("official_neigh_10") + "\n")
+        simulation.execute(official.fix_command(POLICY) + "\n")
 
         final_decision = max(selected)
         for decision in range(final_decision + 1):
@@ -88,8 +89,8 @@ def main() -> None:
             "initial_restart": spec,
             "selection_file": str(args.selection.resolve()),
             "selection_sha256": digest(args.selection),
-            "policy": official.fix_command("official_neigh_10"),
-            "initial_partition": "weight neigh 1.5; 50 warmup steps",
+            "policy": official.fix_command(POLICY),
+            "initial_partition": official.INITIAL_BALANCE + "; 50 warmup steps",
             "mpi_ranks": 32,
             "omp_threads": 1,
             "records": records,

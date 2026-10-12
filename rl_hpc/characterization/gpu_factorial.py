@@ -146,9 +146,10 @@ def build_gpu_contender() -> Path:
     nvcc = shutil.which("nvcc")
     if not nvcc:
         raise RuntimeError("nvcc is required for GPU contention")
+    cuda_arch = os.environ.get("GPU_CUDA_ARCH", "sm_86")
     GPU_BINARY.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
-        [nvcc, "-O3", "-arch=sm_86", str(GPU_SOURCE), "-o", str(GPU_BINARY)],
+        [nvcc, "-O3", f"-arch={cuda_arch}", str(GPU_SOURCE), "-o", str(GPU_BINARY)],
         check=False,
         capture_output=True,
         text=True,

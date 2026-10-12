@@ -1,0 +1,18 @@
+{
+  "method": "fixed decision phases selected from the amp2 GPU Shock trajectory; replayed on the ampb GPU trajectory",
+  "distance_excludes": [
+    "step",
+    "decision",
+    "shock_position"
+  ],
+  "selected": [
+    {"phase": 1, "decision": 8, "step": 5300},
+    {"phase": 2, "decision": 21, "step": 11800},
+    {"phase": 3, "decision": 38, "step": 20300},
+    {"phase": 4, "decision": 59, "step": 30800},
+    {"phase": 5, "decision": 69, "step": 35800},
+    {"phase": 6, "decision": 88, "step": 45300},
+    {"phase": 7, "decision": 93, "step": 47800},
+    {"phase": 8, "decision": 114, "step": 58300}
+  ]
+}
