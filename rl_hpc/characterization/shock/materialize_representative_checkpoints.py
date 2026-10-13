@@ -50,7 +50,9 @@ def main() -> None:
                   f"{official.INITIAL_BALANCE}\nrun 50\n" + collector.OBS)
         state = collector.observation(simulation.execute(setup), hybrid.SKIN, 1.5,
                                       expected_atoms=args.expected_atoms)
-        simulation.execute(official.fix_command(POLICY) + "\n")
+        fix = official.fix_command(POLICY)
+        if fix:
+            simulation.execute(fix + "\n")
 
         final_decision = max(selected)
         for decision in range(final_decision + 1):
@@ -70,7 +72,12 @@ def main() -> None:
                 })
                 print("SAVED", decision, actual_step, path.name, flush=True)
 
-            text = simulation.execute(official.official_commands())
+            if fix:
+                text = simulation.execute(official.official_commands())
+            else:
+                text = simulation.execute(
+                    'variable begin timer\nrun 500\nvariable ended timer\n'
+                    'print "TIMES $(v_ended-v_begin:%.9f)"\n' + collector.OBS + '\n')
             next_state = collector.observation(text, hybrid.SKIN, state["factor"],
                                                expected_atoms=args.expected_atoms)
             if int(next_state["step"]) != int(state["step"]) + 500:
@@ -89,7 +96,7 @@ def main() -> None:
             "initial_restart": spec,
             "selection_file": str(args.selection.resolve()),
             "selection_sha256": digest(args.selection),
-            "policy": official.fix_command(POLICY),
+            "policy": fix or "no dynamic balance",
             "initial_partition": official.INITIAL_BALANCE + "; 50 warmup steps",
             "mpi_ranks": 32,
             "omp_threads": 1,

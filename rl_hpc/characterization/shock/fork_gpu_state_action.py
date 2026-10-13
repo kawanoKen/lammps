@@ -173,12 +173,31 @@ def parse_times(text, label):
     return values
 
 
+def explicit_x_partition(mesh: Path) -> tuple[float, ...]:
+    """Return interior x cuts as box fractions from a balance mesh dump."""
+    lines = mesh.read_text().splitlines()
+    bounds_at = lines.index("ITEM: BOX BOUNDS")
+    xlo, xhi = map(float, lines[bounds_at + 1].split())
+    nodes_at = lines.index("ITEM: NODES")
+    block_end = next((index for index in range(nodes_at + 1, len(lines))
+                      if lines[index] == "ITEM: TIMESTEP"), len(lines))
+    coordinates = sorted({float(line.split()[2]) for line in lines[nodes_at + 1:block_end]
+                          if len(line.split()) >= 5})
+    cuts = tuple((value - xlo) / (xhi - xlo) for value in coordinates
+                 if value > xlo + 1e-9 and value < xhi - 1e-9)
+    if len(cuts) != 31 or any(not 0.0 < value < 1.0 for value in cuts):
+        raise RuntimeError(f"expected 31 interior x cuts, found {len(cuts)}")
+    return cuts
+
+
 def run_trial(output, record, factor, repetition, regime, params, gpu_binary,
-              intensity):
+              intensity, source_cuts=None):
     identifier = key(record, factor, repetition, regime)
     directory = output / "runs" / identifier
     directory.mkdir(parents=True, exist_ok=False)
     restart = Path(record["restart"])
+    reconstruct = ("balance 0.0 x " + " ".join(f"{value:.12g}" for value in source_cuts)
+                   if source_cuts else "balance 1.0 shift x 10 1.0")
     setup = f'''include {params}
 read_restart {restart}
 fix mynve all nve
@@ -191,7 +210,7 @@ neigh_modify every 1 delay 0 check yes
 thermo 100
 thermo_style custom step atoms temp pe density etotal press v_xshock
 run 0 post no
-balance 1.0 shift x 10 1.0 out reconstructed.mesh
+{reconstruct} out reconstructed.mesh
 run 0 post no
 print "PRE_STATE $(step) $(atoms) $(temp) $(press) $(density) $(etotal) $(v_xshock)"
 '''
@@ -306,6 +325,8 @@ def main():
                         help="arithmetic iterations per element in the CUDA contender")
     parser.add_argument("--gpu-sleep-us", type=int, default=0,
                         help="idle microseconds after each contender kernel")
+    parser.add_argument("--preserve-source-partition", action="store_true",
+                        help="restore the fixed x cuts that generated the source checkpoints")
     args = parser.parse_args()
     if len(GPU_IDS) != 4 or len(GPU_CONTENDER_CPUS) != 4:
         parser.error("the current Shock GPU protocol requires four visible GPUs and four contender CPUs")
@@ -324,6 +345,12 @@ def main():
         if forks.digest(Path(record["restart"])) != record["sha256"]:
             parser.error("checkpoint SHA256 mismatch")
     params = Path(manifest["initial_restart"]["path"]).parent / "shockparams.mod"
+    source_cuts = None
+    if args.preserve_source_partition:
+        source_mesh = args.checkpoints.resolve() / "initial.mesh"
+        if not source_mesh.is_file():
+            parser.error("--preserve-source-partition requires initial.mesh beside manifest.json")
+        source_cuts = explicit_x_partition(source_mesh)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     (output / "runs").mkdir()
@@ -347,6 +374,8 @@ def main():
         "contender_cpus": list(GPU_CONTENDER_CPUS),
         "steps_probe": 500, "steps_action": 500, "skin": 0.5,
         "balance_weight": "time", "factors": FACTORS,
+        "source_partition": ({"mode": "explicit x cuts", "cuts": source_cuts}
+                             if source_cuts else {"mode": "fresh atom-count shift"}),
         "regimes": REGIMES, "repetitions": repetitions,
         "seed": args.seed, "schedule": [key(*job) for job in jobs],
         "state_groups": {
@@ -365,7 +394,7 @@ def main():
     with (output / "measurements.jsonl").open("a") as stream:
         for index, job in enumerate(jobs, 1):
             row = run_trial(output, *job, params=params, gpu_binary=gpu_binary,
-                            intensity=intensity)
+                            intensity=intensity, source_cuts=source_cuts)
             stream.write(json.dumps(row, allow_nan=False) + "\n")
             stream.flush()
             os.fsync(stream.fileno())
