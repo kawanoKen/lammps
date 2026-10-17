@@ -1,0 +1,174 @@
+{
+  "states": [
+    {
+      "state": "S1",
+      "step": 4800,
+      "best": "target_0.50",
+      "best_seconds": 3.1283477995904043,
+      "runner_up": "skip",
+      "gap_seconds": 0.0009662380095956102,
+      "gap_pct": 0.03088652769753159
+    },
+    {
+      "state": "S2",
+      "step": 10300,
+      "best": "skip",
+      "best_seconds": 3.4224103824,
+      "runner_up": "equal_shift",
+      "gap_seconds": 1.1746396480000003,
+      "gap_pct": 34.32199873050503
+    },
+    {
+      "state": "S3",
+      "step": 21300,
+      "best": "skip",
+      "best_seconds": 4.2816657844,
+      "runner_up": "equal_shift",
+      "gap_seconds": 0.2945672405999993,
+      "gap_pct": 6.879734557359377
+    },
+    {
+      "state": "S4",
+      "step": 27300,
+      "best": "equal_shift",
+      "best_seconds": 4.7290244908,
+      "runner_up": "skip",
+      "gap_seconds": 0.07863537540000021,
+      "gap_pct": 1.6628244483186767
+    },
+    {
+      "state": "S5",
+      "step": 35800,
+      "best": "equal_shift",
+      "best_seconds": 4.9720697768,
+      "runner_up": "target_1.00",
+      "gap_seconds": 0.17902346719981566,
+      "gap_pct": 3.6005823577768514
+    },
+    {
+      "state": "S6",
+      "step": 42300,
+      "best": "equal_shift",
+      "best_seconds": 5.3609023288,
+      "runner_up": "target_1.00",
+      "gap_seconds": 0.36196920959652434,
+      "gap_pct": 6.752020227116291
+    },
+    {
+      "state": "S7",
+      "step": 49300,
+      "best": "equal_shift",
+      "best_seconds": 5.2513968754,
+      "runner_up": "target_1.00",
+      "gap_seconds": 0.24743875700161588,
+      "gap_pct": 4.711865487842574
+    },
+    {
+      "state": "S8",
+      "step": 57300,
+      "best": "equal_shift",
+      "best_seconds": 5.265742872800001,
+      "runner_up": "target_1.00",
+      "gap_seconds": 0.2649817886153629,
+      "gap_pct": 5.03218244825657
+    }
+  ],
+  "target_only_states": [
+    {
+      "state": "S1",
+      "best": "target_0.50",
+      "best_seconds": 3.1283477995904043,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.6469461574019926
+    },
+    {
+      "state": "S2",
+      "best": "target_1.00",
+      "best_seconds": 4.8498557725968805,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.05966174379771427
+    },
+    {
+      "state": "S3",
+      "best": "target_1.00",
+      "best_seconds": 4.83062948599775,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.3467043058052317
+    },
+    {
+      "state": "S4",
+      "best": "target_1.00",
+      "best_seconds": 4.918395162995126,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.3203240620017489
+    },
+    {
+      "state": "S5",
+      "best": "target_1.00",
+      "best_seconds": 5.151093243999815,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.2030434982069682
+    },
+    {
+      "state": "S6",
+      "best": "target_1.00",
+      "best_seconds": 5.722871538396524,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.25811147201264095
+    },
+    {
+      "state": "S7",
+      "best": "target_1.00",
+      "best_seconds": 5.498835632401616,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.2796653735963055
+    },
+    {
+      "state": "S8",
+      "best": "target_1.00",
+      "best_seconds": 5.530724661415364,
+      "runner_up": "target_0.75",
+      "gap_seconds": 0.08396878718867296
+    }
+  ],
+  "target_tracking_max_relative_error_pct": {
+    "target_0.50": 0.018717447916663705,
+    "target_0.75": 0.01220703125,
+    "target_1.00": 0.01953125,
+    "target_1.25": 0.010579427083336293,
+    "target_1.50": 0.01953124999999556
+  },
+  "fixed": [
+    {
+      "action": "equal_shift",
+      "total": 39.1359069794
+    },
+    {
+      "action": "skip",
+      "total": 39.9566379256
+    },
+    {
+      "action": "target_1.00",
+      "total": 41.19090386340743
+    },
+    {
+      "action": "target_0.75",
+      "total": 41.82917869740476
+    },
+    {
+      "action": "target_0.50",
+      "total": 43.644112488355745
+    },
+    {
+      "action": "target_1.25",
+      "total": 48.360557186404144
+    },
+    {
+      "action": "target_1.50",
+      "total": 54.645806021813435
+    }
+  ],
+  "descriptive_oracle_total": 36.4115603109904,
+  "fixed_oracle_gap": 2.724346668409595,
+  "fixed_oracle_gap_pct": 6.961245768096321
+}
