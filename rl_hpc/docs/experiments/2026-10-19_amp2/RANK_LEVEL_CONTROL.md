@@ -7,6 +7,12 @@ x方向に分割している。この条件では、標準LAMMPSの `balance` �
 x方向cut位置を数値指定することで、各rankの担当区間幅を直接制御できる。
 LAMMPS本体の変更は不要である。
 
+さらに、remote側の先行研究コード
+`rl_hpc/characterization/shock/rank_target_balance.py` に、この標準機能を使った
+32-rank目標ベクトル制御が既に実装されている。各rankへ正のcapacityを与え、atomの
+x座標分布から目標累積atom数に対応する31 cutを求め、`balance 0.0 x ...` を発行する。
+したがって、実装可能性だけでなく、ampbでは安全性と動作が実測済みである。
+
 ただし、これは各rankが独立にローカル設定を変更する機能ではない。全rankが参加する
 collectiveな領域再分割であり、31個の境界から32個の連続区間を定義する。粒子移送、
 通信構造の再設定、Pair/KSpace gridのresetを伴うため、action costを含めて評価する
@@ -137,8 +143,38 @@ x区間幅またはその低次元補正になる。
 3. built-in `weight time` と、明示cut制御を同じstate・horizonで比較する。
 4. 明示cutに追加価値がある場合だけ、低次元actionまたはrank-weight入力拡張を検討する。
 
-現時点の回答は「rankごとの担当領域制御は既存実装で可能。ただしrank別skin等は不可、
-rank別任意weightの直接入力は未実装」である。
+現時点の回答は「rankごとの担当領域制御は標準LAMMPSと既存研究コードで可能。ただし
+rank別skin等は不可、rank別任意weightをLAMMPSへ直接入力する専用コマンドはない」である。
+
+## 5. 既存研究実装の再利用範囲
+
+`rank_target_balance.py` のactionは32要素のcapacity vector
+
+```text
+c = (c_0, ..., c_31),  c_i > 0
+```
+
+であり、rank `i` の目標atom数を
+
+```text
+N_i^target = N_total * c_i / sum_j(c_j)
+```
+
+としている。atomの経験的x方向CDFをこの累積目標で逆変換し、31 cutを作る。
+同時に、隣接cut間の実距離がskin未満ならactionをrejectする安全checkがある。
+
+この実装はamp2と同じ491,520 atoms、MPI32、`32 x 1 x 1`、skin 0.5という主要条件に
+一致するため、制御核 `target_counts()` と `cuts_from_x()` は再利用できる。一方、次は
+現状hard-codeされているため、amp2 runnerへそのまま接続する前に設定化が必要である。
+
+- atom数、rank数、skin、500-step horizon
+- checkpoint pathと初期化手順
+- CPU contention対象core（現在はrank 0--7を想定）
+- dumpによる全atom x座標収集
+
+特に全atom座標dumpとPython側sortはcontroller overheadになり、既存ampb評価では約
+0.26--0.30秒を要した。この費用もrewardへ含める必要がある。将来高速化するなら、
+座標histogramまたはrank-local累積量だけをMPI集約するlibrary-side実装が候補になる。
 
 ## 調査根拠
 
